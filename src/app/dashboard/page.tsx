@@ -1,24 +1,24 @@
-import { ArrowRight, Check, Dumbbell, Flame, Scale } from "lucide-react";
+import { ArrowRight, Check, Dumbbell } from "lucide-react";
 import Link from "next/link";
 
 import { AppHeader } from "@/components/app-header";
 import { AssistantChat } from "@/components/assistant-chat";
 import { CardioPanel } from "@/components/cardio-panel";
 import { DashboardTabs } from "@/components/dashboard-tabs";
-import { GamificationPanel } from "@/components/gamification-panel";
 import { GeneratePlanButton } from "@/components/generate-plan-button";
 import { NutritionPlan } from "@/components/nutrition-plan";
 import { NextStepPanel } from "@/components/next-step-panel";
-import { PlanReviewNotices } from "@/components/plan-review-notices";
-import { PersonalizationStatus } from "@/components/personalization-status";
+import { NutritionSummaryCard } from "@/components/nutrition-summary-card";
 import { ProgressCheckinForm, type ProgressCheckinSummary, type ProgressMeasurementSummary } from "@/components/progress-checkin-form";
 import { ProgressPanel } from "@/components/progress-panel";
+import { ProgressSummaryCard } from "@/components/progress-summary-card";
 import { TrainingDaysPanel } from "@/components/training-days-panel";
 import { WorkoutHistoryPanel } from "@/components/workout-history-panel";
 import {
   computeGamification,
   computeStreaks,
 } from "@/features/gamification/xp";
+import { unifiedActivityDates, weeklyActivity } from "@/features/gamification/activity";
 import {
   cardioByWorkoutDay,
   cardioRecommendations,
@@ -208,13 +208,15 @@ export default async function DashboardPage() {
         const cardio = cardioSchedule[index];
         const dayPreference = (cardioPreferences ?? []).find((item) => item.workout_day_id === day.id);
         const keyPreference = cardio ? cardioPreferenceByKey.get(cardio.key) : null;
-        const preference = dayPreference ?? keyPreference;
+        const preference = dayPreference ?? (keyPreference?.workout_day_id === day.id ? keyPreference : null);
         const cardioDisabled = preference?.enabled === false;
         const activePreference = preference?.enabled !== false ? preference : null;
         const configuredCardio = cardio && !cardioDisabled
           ? {
               ...cardio,
-              modalities: [activePreference?.modality ?? cardio.modalities[0]],
+              modalities: activePreference?.modality
+                ? [activePreference.modality, ...cardio.modalities.filter((modality) => modality !== activePreference.modality)]
+                : cardio.modalities,
               durationMinutes: activePreference?.duration_minutes ?? cardio.durationMinutes,
               intensity: ((activePreference?.intensity as typeof cardio.intensity | undefined) ?? cardio.intensity) as "Suave" | "Moderada" | "Intervalos",
             }
@@ -570,20 +572,43 @@ export default async function DashboardPage() {
     .select("id", { count: "exact", head: true })
     .eq("user_id", auth.user.id)
     .eq("completed", true);
-  const activityDates = [
-    ...(loggedSessions ?? []).map((session) =>
-      (session.completed_at ?? "").slice(0, 10),
-    ),
-    ...(measurements ?? []).map((entry) => entry.measured_at),
-  ];
+  const activityDates = unifiedActivityDates([
+    ...(loggedSessions ?? []).map((session) => [(session.completed_at ?? "").slice(0, 10)]),
+    (measurements ?? []).map((entry) => entry.measured_at),
+    completedDates,
+  ]);
   const { current: currentStreak, best: bestStreak } =
     computeStreaks(activityDates);
+  const weeklyProgress = weeklyActivity(activityDates);
   const gamification = computeGamification({
     workoutSessionsCount: workoutSessionsCount ?? 0,
     measurementsCount: (measurements ?? []).length,
+    bodyMeasurementsCount: (measurements ?? []).filter((entry) => entry.waist_cm !== null || entry.chest_cm !== null || entry.arm_cm !== null || entry.thigh_cm !== null).length,
+    nutritionDaysCount: completedDates.length,
     bestStreak,
     weightDeltaKg: sortedMeasurements.length > 1 ? weightDelta : null,
+    targetSet: displayedTargetWeightKg !== null,
+    targetReached: displayedTargetWeightKg !== null && latestMeasurement !== null && Math.abs(latestMeasurement.weightKg - displayedTargetWeightKg) <= 0.5,
+    weeklyActiveDays: weeklyProgress.current.activeDays,
+    completedWeeklyGoals: weeklyProgress.completedWeeks,
   });
+  const notices = [
+    scheduled && !completedToday ? { id: `workout-${scheduled.id}`, title: "Tu siguiente paso", message: `Hoy toca ${nameFor(scheduled.name)}. Completa la sesión para mantener tu ritmo.`, href: `/workout/${scheduled.id}`, actionLabel: "Comenzar sesión" } : null,
+    !weeklyProgress.current.completed ? { id: `weekly-${weeklyProgress.current.weekStart}-${weeklyProgress.current.activeDays}`, title: "Tu objetivo semanal", message: `Llevas ${weeklyProgress.current.activeDays} de ${weeklyProgress.current.targetDays} días activos esta semana.`, href: "/dashboard", actionLabel: "Ver progreso" } : { id: `weekly-complete-${weeklyProgress.current.weekStart}`, title: "Objetivo semanal conseguido", message: "Has completado tu objetivo de actividad de esta semana. +100 XP.", href: "/achievements", actionLabel: "Ver progreso" },
+    daysSinceLastMeasurement === null || daysSinceLastMeasurement >= 14 ? { id: `measurement-${daysSinceLastMeasurement ?? "none"}`, title: "Tu evolución te espera", message: daysSinceLastMeasurement === null ? "Aún no has registrado tu peso." : `Han pasado ${daysSinceLastMeasurement} días desde tu último registro.`, href: "/dashboard?tab=progress", actionLabel: "Actualizar progreso" } : null,
+    profile?.nutrition_plan_review_needed || profile?.workout_plan_review_needed ? { id: "plan-review", title: "Tu plan necesita una revisión", message: "Tus datos han cambiado y podemos adaptar tu rutina o tu dieta.", href: "/checkin", actionLabel: "Revisar mi plan" } : null,
+  ].filter((notice): notice is NonNullable<typeof notice> => Boolean(notice));
+  const planReviewPending = Boolean(profile?.nutrition_plan_review_needed || profile?.workout_plan_review_needed || (daysSinceLastMeasurement !== null && daysSinceLastMeasurement >= 14));
+  const planReviewIsStale = !profile?.nutrition_plan_review_needed && !profile?.workout_plan_review_needed && daysSinceLastMeasurement !== null && daysSinceLastMeasurement >= 14;
+  const planReviewMessage = profile?.nutrition_plan_review_needed && profile?.workout_plan_review_needed
+    ? "Tus intolerancias y lesiones han cambiado. Revísalas antes de empezar la siguiente sesión."
+    : profile?.nutrition_plan_review_needed
+      ? "Tus intolerancias o alergias han cambiado. Revisa tu dieta antes de continuar."
+      : profile?.workout_plan_review_needed
+        ? "Tus lesiones o molestias han cambiado. Revisa tu rutina antes de continuar."
+        : planReviewIsStale
+          ? `Han pasado ${daysSinceLastMeasurement} días desde tu último registro. Actualiza tu evolución para seguir ajustando el plan con datos recientes.`
+          : undefined;
   const overview = (
     <>
       <div className="grid gap-4 md:grid-cols-3">
@@ -621,95 +646,9 @@ export default async function DashboardPage() {
             <h2 className="mt-2 text-2xl font-semibold">Aún por generar</h2>
           )}
         </section>
-        <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6">
-          <Flame className="text-[#72873f]" />
-          <p className="mt-10 text-sm text-[#819078]">Nutrición diaria</p>
-          <h2 className="mt-2 text-2xl font-semibold">
-            {nutritionVersion
-              ? `${nutritionVersion.calories} kcal`
-              : "Pendiente"}
-          </h2>
-          {nutritionVersion ? (
-            <div className="mt-3 flex gap-3 text-xs text-[#68736b]">
-              <span>
-                <strong className="text-[#18231f]">
-                  {Math.round(nutritionVersion.protein_grams)}g
-                </strong>{" "}
-                proteína
-              </span>
-              <span>
-                <strong className="text-[#18231f]">
-                  {Math.round(nutritionVersion.carbs_grams)}g
-                </strong>{" "}
-                carbos
-              </span>
-              <span>
-                <strong className="text-[#18231f]">
-                  {Math.round(nutritionVersion.fats_grams)}g
-                </strong>{" "}
-                grasas
-              </span>
-            </div>
-          ) : null}
-          {nutritionVersion && meals.length > 0 ? (
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-xs text-[#68736b]">
-                <span>
-                  {todayMealIds.length >= meals.length
-                    ? "Día completado"
-                    : "Día pendiente"}
-                </span>
-              </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e3e7dd]">
-                <div
-                  className="h-full rounded-full bg-[#72873f] transition-all"
-                  style={{
-                    width: todayMealIds.length >= meals.length ? "100%" : "0%",
-                  }}
-                />
-              </div>
-            </div>
-          ) : null}
-        </section>
-        <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6">
-          <Scale className="text-[#72873f]" />
-          <p className="mt-10 text-sm text-[#819078]">Punto de partida</p>
-          <h2 className="mt-2 text-2xl font-semibold">
-            {latestMeasurement ? `${latestMeasurement.weightKg} kg` : "-"}
-          </h2>
-          <p className="mt-3 text-sm text-[#68736b]">
-            Objetivo: {displayedPrimaryGoal || "Objetivo pendiente"}
-          </p>
-          {sortedMeasurements.length > 1 ? (
-            <p
-              className={`mt-2 text-sm font-semibold ${weightDelta === 0 ? "text-[#68736b]" : weightDelta < 0 ? "text-[#72873f]" : "text-[#a06a3a]"}`}
-            >
-              {weightDelta === 0
-                ? "Sin cambios de peso"
-                : `${weightDelta > 0 ? "+" : ""}${weightDelta.toFixed(1)} kg desde el inicio`}
-            </p>
-          ) : null}
-          {displayedTargetWeightKg && latestMeasurement ? (
-            <p className="mt-1 text-xs text-[#819078]">
-              {Math.abs(
-                latestMeasurement.weightKg - displayedTargetWeightKg,
-              ).toFixed(1)}{" "}
-              kg del objetivo ({displayedTargetWeightKg} kg)
-            </p>
-          ) : null}
-        </section>
+        {nutritionVersion ? <NutritionSummaryCard calories={nutritionVersion.calories} proteinGrams={nutritionVersion.protein_grams} carbsGrams={nutritionVersion.carbs_grams} fatsGrams={nutritionVersion.fats_grams} mealIds={meals.map((meal) => meal.id)} todayCompletedMealIds={todayMealIds} completedDates={completedDates} /> : <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6"><p className="text-sm text-[#819078]">Nutrición diaria</p><h2 className="mt-2 text-2xl font-semibold">Pendiente</h2></section>}
+        <ProgressSummaryCard currentWeightKg={latestMeasurement?.weightKg ?? null} startingWeightKg={firstMeasurement?.weightKg ?? null} targetWeightKg={displayedTargetWeightKg} weightDeltaKg={sortedMeasurements.length > 1 ? weightDelta : null} daysSinceLastMeasurement={daysSinceLastMeasurement} primaryGoal={displayedPrimaryGoal} />
       </div>
-      <GamificationPanel
-        level={gamification.level}
-        xp={gamification.xp}
-        xpIntoLevel={gamification.xpIntoLevel}
-        xpForNextLevel={gamification.xpForNextLevel}
-        progressPercent={gamification.progressPercent}
-        isMaxLevel={gamification.isMaxLevel}
-        currentStreak={currentStreak}
-        bestStreak={bestStreak}
-        achievements={gamification.achievements}
-      />
     </>
   );
   const training = (
@@ -748,7 +687,7 @@ export default async function DashboardPage() {
       recommendations={days.flatMap((day) => day.cardio ? [{ ...day.cardio, workoutDayId: day.id }] : [])}
       availableDays={days.map((day) => ({ id: day.id, label: `${nameFor(day.name)} · Día ${days.findIndex((item) => item.id === day.id) + 1}` }))}
       initialConfigurations={Object.fromEntries(
-        (cardioPreferences ?? []).filter((preference) => preference.enabled !== false).map((preference) => [
+        (cardioPreferences ?? []).filter((preference) => preference.enabled !== false && days.some((day) => day.id === preference.workout_day_id)).map((preference) => [
           preference.session_key,
           {
             modality: preference.modality,
@@ -775,7 +714,7 @@ export default async function DashboardPage() {
           </a>
         </div>
       </section>
-      <ProgressCheckinForm latestCheckin={latestCheckin as ProgressCheckinSummary | null} initialTargetWeightKg={profile?.target_weight_kg ?? null} latestMeasurement={latestMeasurement as ProgressMeasurementSummary | null} previousMeasurement={firstMeasurement && latestMeasurement && firstMeasurement.id !== latestMeasurement.id ? sortedMeasurements[sortedMeasurements.length - 2] as ProgressMeasurementSummary : null} primaryGoal={displayedPrimaryGoal} />
+      <ProgressCheckinForm latestCheckin={latestCheckin as ProgressCheckinSummary | null} initialTargetWeightKg={profile?.target_weight_kg ?? null} latestMeasurement={latestMeasurement as ProgressMeasurementSummary | null} previousMeasurement={firstMeasurement && latestMeasurement && firstMeasurement.id !== latestMeasurement.id ? sortedMeasurements[sortedMeasurements.length - 2] as ProgressMeasurementSummary : null} primaryGoal={displayedPrimaryGoal} activeInjuries={injuryLabelsFromRestrictions(profile?.restrictions).filter((value) => value !== "Ninguna")} activeFoodRestrictions={foodRestrictionLabelsFromRestrictions(profile?.food_restrictions).filter((value) => value !== "Ninguna")} />
       <ProgressPanel
         key={displayedTargetWeightKg ?? "no-target"}
         entries={measurementEntries}
@@ -791,11 +730,8 @@ export default async function DashboardPage() {
         <AppHeader
           email={auth.user.email ?? ""}
           name={accountName}
-          daysSinceLastMeasurement={daysSinceLastMeasurement}
-          hasProfile={Boolean(profile)}
-          workoutLabel={scheduled ? nameFor(scheduled.name) : null}
-          workoutHref={scheduled ? `/workout/${scheduled.id}` : null}
-          workoutDue={Boolean(scheduled && !completedToday)}
+          gamification={{ ...gamification, currentStreak, bestStreak }}
+          notices={notices}
         />
         <section className="mt-14">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#819078]">
@@ -808,23 +744,15 @@ export default async function DashboardPage() {
             Tu planificación reúne entrenamiento, nutrición y seguimiento en un
             solo lugar.
           </p>
-          <PlanReviewNotices
-            nutritionPending={Boolean(profile?.nutrition_plan_review_needed)}
-            workoutPending={Boolean(profile?.workout_plan_review_needed)}
-          />
           <NextStepPanel
             completedToday={completedToday}
             workoutLabel={scheduled ? nameFor(scheduled.name) : null}
             workoutHref={scheduled ? `/workout/${scheduled.id}` : null}
             hasProfile={Boolean(profile)}
-          />
-          <PersonalizationStatus
-            initialInjuries={injuryLabelsFromRestrictions(
-              profile?.restrictions,
-            )}
-            initialFoodRestrictions={foodRestrictionLabelsFromRestrictions(
-              profile?.food_restrictions,
-            )}
+            planReviewPending={planReviewPending}
+            planReviewMessage={planReviewMessage}
+            planReviewHref={planReviewIsStale ? "/dashboard?tab=progress" : profile?.nutrition_plan_review_needed && !profile?.workout_plan_review_needed ? "/checkin?mode=nutrition" : profile?.workout_plan_review_needed && !profile?.nutrition_plan_review_needed ? "/checkin?mode=workout" : "/checkin?mode=general"}
+            planReviewAction={planReviewIsStale ? "Actualizar evolución" : "Revisar mi plan"}
           />
           <DashboardTabs
             overview={overview}

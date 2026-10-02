@@ -29,8 +29,8 @@ export function cardioRecommendations(goal: string, experience: string): CardioR
 
   if (normalizedGoal.includes("ganar")) {
     return [
-      { key: "salud-1", title: "Cardio de salud", modalities: ["Elíptica", "Bicicleta", "Caminar al aire libre"], durationMinutes: 20, intensity: "Suave", effort: "RPE 4-5: sin comprometer la recuperación de pesas." },
-      { key: "salud-2", title: "Cardio de salud", modalities: ["Elíptica", "Bicicleta", "Cinta"], durationMinutes: 20, intensity: "Suave", effort: "RPE 4-5: ritmo cómodo y estable." },
+      { key: "salud-1", title: "Cardio de salud", modalities: ["Cinta", "Elíptica", "Bicicleta", "Caminar al aire libre"], durationMinutes: 20, intensity: "Suave", effort: "RPE 4-5: sin comprometer la recuperación de pesas." },
+      { key: "salud-2", title: "Cardio de salud", modalities: ["Cinta", "Elíptica", "Bicicleta"], durationMinutes: 20, intensity: "Suave", effort: "RPE 4-5: ritmo cómodo y estable." },
     ];
   }
 

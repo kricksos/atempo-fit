@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Clock3, LoaderCircle, Play, Trophy } from "l
 import Link from "next/link";
 import { useState } from "react";
 
-type Exercise = { id: string; name: string; sets: number; repetitions: string; restSeconds: number; media: [string, string] };
+type Exercise = { id: string; name: string; sets: number; repetitions: string; restSeconds: number; media: [string, string] | null };
 type PreviousLog = { exerciseId: string; setNumber: number; weightKg: number; repetitions: number };
 type SetLog = { weightKg: number; repetitions: number };
 type WorkoutPlayerProps = { workoutDayId: string; workoutName: string; exercises: Exercise[]; lastPerformance: PreviousLog[] };
@@ -19,19 +19,23 @@ function initialRepetitions(value: string, setIndex: number, totalSets: number) 
 }
 
 function ExerciseMotion({ exercise, heightClass = "h-72" }: { exercise: Exercise; heightClass?: string }) {
+  if (!exercise.media) {
+    return <div className={`grid ${heightClass} place-items-center bg-[#25352e] px-6 text-center text-sm font-semibold text-[#d7f36b]`}>Demostración no disponible para este ejercicio.</div>;
+  }
+
   return (
     <div className={`relative ${heightClass} overflow-hidden bg-[#25352e]`}>
       <motion.img
         src={exercise.media[0]}
         alt={`${exercise.name}, posición inicial`}
-        className="absolute inset-0 size-full object-cover"
+        className="absolute inset-0 size-full object-contain"
         animate={{ opacity: [1, 1, 0, 0, 1] }}
         transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut", times: [0, 0.36, 0.5, 0.86, 1] }}
       />
       <motion.img
         src={exercise.media[1]}
         alt={`${exercise.name}, posición final`}
-        className="absolute inset-0 size-full object-cover"
+        className="absolute inset-0 size-full object-contain"
         animate={{ opacity: [0, 0, 1, 1, 0] }}
         transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut", times: [0, 0.36, 0.5, 0.86, 1] }}
       />

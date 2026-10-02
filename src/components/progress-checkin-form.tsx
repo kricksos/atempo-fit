@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, HeartPulse, LoaderCircle, ShieldCheck, TrendingDown, TrendingUp } from "lucide-react";
+import { Check, LoaderCircle, TrendingDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { PersonalizationStatus } from "@/components/personalization-status";
 import { goalDirection } from "@/lib/goal-direction";
 
 type Adherence = "low" | "medium" | "high";
@@ -38,6 +39,8 @@ type ProgressCheckinFormProps = {
   latestMeasurement: ProgressMeasurementSummary | null;
   previousMeasurement: ProgressMeasurementSummary | null;
   primaryGoal: string;
+  activeInjuries: string[];
+  activeFoodRestrictions: string[];
 };
 
 const scoreOptions = ["1", "2", "3", "4", "5"];
@@ -63,7 +66,7 @@ function messageIndex(label: string, delta: number) {
   return [...label].reduce((total, character) => total + character.charCodeAt(0), Math.round(Math.abs(delta) * 10)) ;
 }
 
-export function ProgressCheckinForm({ latestCheckin, initialTargetWeightKg, latestMeasurement, previousMeasurement, primaryGoal }: ProgressCheckinFormProps) {
+export function ProgressCheckinForm({ latestCheckin, initialTargetWeightKg, latestMeasurement, previousMeasurement, primaryGoal, activeInjuries, activeFoodRestrictions }: ProgressCheckinFormProps) {
   const router = useRouter();
   const [energyScore, setEnergyScore] = useState(String(latestCheckin?.energy_score ?? 3));
   const [sleepScore, setSleepScore] = useState(String(latestCheckin?.sleep_score ?? 3));
@@ -71,10 +74,6 @@ export function ProgressCheckinForm({ latestCheckin, initialTargetWeightKg, late
   const [sorenessScore, setSorenessScore] = useState(String(latestCheckin?.soreness_score ?? 3));
   const [trainingAdherence, setTrainingAdherence] = useState<Adherence>(latestCheckin?.training_adherence ?? "medium");
   const [nutritionAdherence, setNutritionAdherence] = useState<Adherence>(latestCheckin?.nutrition_adherence ?? "medium");
-  const [painPresent, setPainPresent] = useState(latestCheckin?.pain_present ?? false);
-  const [painArea, setPainArea] = useState(latestCheckin?.pain_area ?? "");
-  const [painSeverity, setPainSeverity] = useState(String(latestCheckin?.pain_severity ?? 4));
-  const [healthConsent, setHealthConsent] = useState(latestCheckin?.pain_present ?? false);
   const [notes, setNotes] = useState(latestCheckin?.notes ?? "");
   const [weightInput, setWeightInput] = useState(latestMeasurement ? String(latestMeasurement.weightKg) : "");
   const [waistInput, setWaistInput] = useState(latestMeasurement?.waistCm ? String(latestMeasurement.waistCm) : "");
@@ -156,9 +155,7 @@ export function ProgressCheckinForm({ latestCheckin, initialTargetWeightKg, late
         sorenessScore: Number(sorenessScore),
         trainingAdherence,
         nutritionAdherence,
-        painPresent,
-        painArea: painPresent ? painArea : undefined,
-        painSeverity: painPresent ? Number(painSeverity) : undefined,
+        painPresent: false,
         notes,
       }),
     });
@@ -169,7 +166,6 @@ export function ProgressCheckinForm({ latestCheckin, initialTargetWeightKg, late
       return;
     }
     setMessage("Revisión guardada. Tendremos en cuenta estos datos antes de recomendar cambios.");
-    setHealthConsent(false);
     setWeightInput("");
     setWaistInput("");
     setChestInput("");
@@ -218,10 +214,7 @@ export function ProgressCheckinForm({ latestCheckin, initialTargetWeightKg, late
         {[["Entrenamiento", trainingAdherence, setTrainingAdherence], ["Nutrición", nutritionAdherence, setNutritionAdherence]].map(([label, value, setter]) => <fieldset key={label as string} className="rounded-2xl border border-[#d9e3ce] bg-white/75 p-4"><legend className="px-1 text-sm font-semibold text-[#354231]">¿Cómo has seguido tu {String(label).toLowerCase()}?</legend><div className="mt-3 grid gap-2 sm:grid-cols-3">{adherenceOptions.map((option) => <button key={option.value} type="button" onClick={() => (setter as (value: Adherence) => void)(option.value)} className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${value === option.value ? "border-[#72873f] bg-[#dff0a9] text-[#354c1d]" : "border-[#dfe6d8] bg-white text-[#68736b] hover:border-[#9aaa89]"}`}>{option.label}</button>)}</div></fieldset>)}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-[#d9e3ce] bg-white/75 p-4">
-        <label className="flex items-start gap-3 text-sm font-semibold text-[#354231]"><input type="checkbox" checked={painPresent} onChange={(event) => setPainPresent(event.target.checked)} className="mt-0.5 size-4 accent-[#72873f]" /><span className="flex items-center gap-2"><HeartPulse size={16} />Tengo una molestia o dolor nuevo</span></label>
-        {painPresent ? <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]"><label className="text-sm text-[#68736b]">Zona<input value={painArea} onChange={(event) => setPainArea(event.target.value)} placeholder="Ej. rodilla derecha" className="mt-1 w-full rounded-xl border border-[#d3dbcf] bg-white px-3 py-2" /></label><label className="text-sm text-[#68736b]">Intensidad (1-10)<input type="number" min="1" max="10" value={painSeverity} onChange={(event) => setPainSeverity(event.target.value)} className="mt-1 w-28 rounded-xl border border-[#d3dbcf] bg-white px-3 py-2" /></label><label className="flex gap-2 text-xs leading-5 text-[#68736b] sm:col-span-2"><input type="checkbox" checked={healthConsent} onChange={(event) => setHealthConsent(event.target.checked)} className="mt-0.5 size-4 accent-[#72873f]" /><span>Autorizo el tratamiento de esta información de salud para adaptar mi experiencia. <ShieldCheck size={13} className="inline" /></span></label></div> : <p className="mt-2 text-xs text-[#819078]">Si aparece dolor intenso o preocupante, detén la actividad y consulta con un profesional.</p>}
-      </div>
+      <PersonalizationStatus initialInjuries={activeInjuries} initialFoodRestrictions={activeFoodRestrictions} />
 
       <div className="mt-4 rounded-2xl border border-[#d9e3ce] bg-white/75 p-4">
         <div>
@@ -245,7 +238,7 @@ export function ProgressCheckinForm({ latestCheckin, initialTargetWeightKg, late
       <label className="mt-4 block text-sm text-[#68736b]">¿Hay algo más que debamos saber?<textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} rows={2} placeholder="Cambios de horarios, viajes, cansancio..." className="mt-1 w-full resize-none rounded-xl border border-[#d3dbcf] bg-white px-3 py-2" /></label>
       {error ? <p className="mt-4 text-sm font-semibold text-[#9b4937]">{error}</p> : null}
       {message ? <div className="mt-4 flex flex-wrap items-center gap-3 text-sm font-semibold text-[#4f6827]"><p className="flex items-center gap-2"><Check size={16} />{message}</p><Link href="/checkin" className="rounded-full border border-[#72873f] px-3 py-1.5 text-xs text-[#50652b] hover:bg-[#e7f5b4]">Revisar cambios del plan</Link></div> : null}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#819078]">Tu revisión se guarda una vez al día y queda asociada solo a tu cuenta.</p><button type="button" disabled={isSaving || (painPresent && !healthConsent)} onClick={submit} className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />} {isSaving ? "Guardando..." : "Guardar revisión"}</button></div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#819078]">Tu revisión se guarda una vez al día y queda asociada solo a tu cuenta.</p><button type="button" disabled={isSaving} onClick={submit} className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />} {isSaving ? "Guardando..." : "Guardar revisión"}</button></div>
     </section>
   );
 }

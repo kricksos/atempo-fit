@@ -3,11 +3,16 @@ import Link from "next/link";
 import { CheckinWizard } from "@/components/checkin-wizard";
 import { foodRestrictionLabelsFromRestrictions } from "@/lib/food-restrictions";
 import { injuryLabelsFromRestrictions } from "@/lib/injuries";
-import { getDaysSinceLastMeasurement } from "@/lib/last-measurement";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function CheckinPage() {
+type CheckinPageProps = {
+  searchParams: Promise<{ mode?: string }>;
+};
+
+export default async function CheckinPage({ searchParams }: CheckinPageProps) {
+  const { mode } = await searchParams;
+  const checkinMode = mode === "workout" || mode === "nutrition" || mode === "general" ? mode : "general";
   const authClient = await createClient();
   const { data: auth } = await authClient.auth.getUser();
 
@@ -18,7 +23,6 @@ export default async function CheckinPage() {
 
   if (!profile) return <main className="grid min-h-screen place-items-center bg-[#f4f1e9] text-center text-[#18231f]"><div><h1 className="text-3xl font-semibold">Completa primero tu perfil inicial</h1><Link href="/dashboard" className="mt-6 inline-flex rounded-full bg-[#18231f] px-5 py-3 text-sm font-semibold text-white">Volver al panel</Link></div></main>;
 
-  const daysSinceLastMeasurement = await getDaysSinceLastMeasurement(db, auth.user.id);
   const accountName = profile.name ?? (typeof auth.user.user_metadata?.name === "string" ? auth.user.user_metadata.name : "Mi cuenta");
 
   return (
@@ -29,9 +33,9 @@ export default async function CheckinPage() {
       initialTrainingPlace={profile.training_place ?? "Gimnasio completo"}
       initialInjuries={injuryLabelsFromRestrictions(profile.restrictions)}
       initialFoodRestrictions={foodRestrictionLabelsFromRestrictions(profile.food_restrictions)}
+      mode={checkinMode}
       email={auth.user.email ?? ""}
       name={accountName}
-      daysSinceLastMeasurement={daysSinceLastMeasurement}
     />
   );
 }

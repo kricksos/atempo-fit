@@ -194,9 +194,10 @@ function catalogExerciseFor(templateName: string, catalog: PlanningCatalogExerci
   const templateGroups = exerciseCatalogInfo[templateName]?.muscleGroups ?? [];
   const desiredPrimary = templateGroups.map(primaryForMuscleGroup).find(Boolean);
   const candidates = catalog.filter((exercise) => {
+    if (!exercise.hasTrustedMedia) return false;
     if (excluded.has(exercise.name)) return false;
     if (desiredPrimary && exercise.primaryMuscle !== desiredPrimary) return false;
-    const homeFriendly = exercise.equipment.every((item) => ["", "none_(bodyweight_exercise)", "dumbbell", "kettlebell", "resistance_band", "gym_mat", "bench"].includes(item));
+    const homeFriendly = exercise.equipment.every((item) => ["", "none_(bodyweight_exercise)", "dumbbell", "kettlebell", "resistance_band", "gym_mat", "bench", "exercise_ball", "foam_roll"].includes(item));
     if (trainingPlace === "Casa" && !homeFriendly) return false;
     if (trainingPlace === "Gimnasio básico" && exercise.equipment.some((item) => ["cable_machine", "machine", "smith_machine", "pull-up_bar", "parallel_bars"].includes(item))) return false;
     return !exercise.restrictions.some((restriction) => restrictions.includes(restriction));

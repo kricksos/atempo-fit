@@ -338,6 +338,7 @@ export type Database = {
           id: string
           image_end_url: string | null
           image_start_url: string | null
+          is_momentum_approved: boolean
           media_author: string | null
           media_license: string | null
           media_source: string | null
@@ -358,6 +359,7 @@ export type Database = {
           id?: string
           image_end_url?: string | null
           image_start_url?: string | null
+          is_momentum_approved?: boolean
           media_author?: string | null
           media_license?: string | null
           media_source?: string | null
@@ -378,6 +380,7 @@ export type Database = {
           id?: string
           image_end_url?: string | null
           image_start_url?: string | null
+          is_momentum_approved?: boolean
           media_author?: string | null
           media_license?: string | null
           media_source?: string | null

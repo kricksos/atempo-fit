@@ -71,7 +71,7 @@ export function CardioPanel({ recommendations, availableDays, initialConfigurati
   function addCardioDay() {
     if (!newDayId) return;
     const key = `custom-${newDayId}`;
-    const item: CardioRecommendation & { workoutDayId: string } = { key, workoutDayId: newDayId, title: "Cardio adicional", modalities: ["Bicicleta", "Elíptica", "Cinta", "Remo", "Caminar al aire libre"], durationMinutes: 20, intensity: "Suave", effort: "Configura este bloque según tu objetivo y recuperación." };
+    const item: CardioRecommendation & { workoutDayId: string } = { key, workoutDayId: newDayId, title: "Cardio adicional", modalities: ["Cinta", "Bicicleta", "Elíptica", "Remo", "Caminar al aire libre"], durationMinutes: 20, intensity: "Suave", effort: "Configura este bloque según tu objetivo y recuperación." };
     setItems((current) => [...current, item]);
     setDayByKey((current) => ({ ...current, [key]: newDayId }));
     setConfigByKey((current) => ({ ...current, [key]: { modality: item.modalities[0], duration: item.durationMinutes, intensity: item.intensity } }));

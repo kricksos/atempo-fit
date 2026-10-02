@@ -16,7 +16,7 @@ type Props = { catalog: CatalogExercise[]; hasActivePlan: boolean; routines: Rou
 const muscleFilters = ["Todos", "Pectoral", "Dorsal", "Deltoides", "Bíceps", "Tríceps", "Cuádriceps", "Isquiotibiales", "Glúteos", "Aductores", "Gemelos", "Zona lumbar", "Core"];
 const filterToPrimaryMuscle: Record<string, string> = { Pectoral: "pectorals", Dorsal: "lats", Deltoides: "deltoids", Bíceps: "biceps", Tríceps: "triceps", Cuádriceps: "quadriceps", Isquiotibiales: "hamstrings", Glúteos: "glutes", Aductores: "adductors", Gemelos: "calves", "Zona lumbar": "lower_back", Core: "core" };
 const primaryMuscleLabels: Record<string, string> = { pectorals: "Pectoral", lats: "Dorsal", deltoids: "Deltoides", biceps: "Bíceps", triceps: "Tríceps", quadriceps: "Cuádriceps", hamstrings: "Isquiotibiales", glutes: "Glúteos", adductors: "Aductores", calves: "Gemelos", lower_back: "Zona lumbar", core: "Core" };
-const muscleLabels: Record<string, string> = { pecho: "Pecho", espalda: "Dorsal", hombros: "Deltoides", biceps: "Bíceps", triceps: "Tríceps", piernas: "Piernas", isquios: "Isquios", gluteos: "Glúteos", aductores: "Aductores", gemelos: "Gemelos", core: "Core" };
+const muscleLabels: Record<string, string> = { pecho: "Pecho", espalda: "Dorsal", hombros: "Deltoides", biceps: "Bíceps", triceps: "Tríceps", piernas: "Piernas", isquios: "Isquios", gluteos: "Glúteos", aductores: "Aductores", gemelos: "Gemelos", core: "Core", forearms: "Antebrazos", traps: "Trapecios", lower_back: "Zona lumbar" };
 const muscleOrder = ["pectorals", "lats", "deltoids", "biceps", "triceps", "quadriceps", "hamstrings", "glutes", "adductors", "calves", "lower_back", "core"];
 const muscleColors: Record<string, { dot: string; text: string; border: string; background: string }> = {
   pectorals: { dot: "bg-[#e87970]", text: "text-[#b84f49]", border: "border-[#efb1aa]", background: "bg-[#fff1ef]" },
@@ -50,7 +50,7 @@ function equipmentLabel(equipment: string[]) {
 }
 
 function muscleSummary(exercise: CatalogExercise) {
-  return exercise.muscleGroups.map((group) => muscleLabels[group.toLowerCase()] ?? group).join(" · ");
+  return [...new Set(exercise.muscleGroups.map((group) => muscleLabels[group.toLowerCase()] ?? primaryMuscleLabels[group.toLowerCase()] ?? group))].join(" · ");
 }
 
 function colorForMuscle(muscle: string | null | undefined) {

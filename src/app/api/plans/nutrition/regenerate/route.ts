@@ -16,6 +16,14 @@ function errorMessage(error: unknown) {
   return "Unable to regenerate nutrition.";
 }
 
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").sort() : [];
+}
+
+function sameArray(left: unknown, right: unknown) {
+  return JSON.stringify(stringArray(left)) === JSON.stringify(stringArray(right));
+}
+
 export async function POST(request: Request) {
   const authClient = await createClient();
   const { data: authData } = await authClient.auth.getUser();
@@ -40,9 +48,20 @@ export async function POST(request: Request) {
     if (!planId) throw new Error("Unable to find or create nutrition plan.");
 
     const [{ data: oldVersion }, { data: latestVersion }] = await Promise.all([
-      supabase.from("nutrition_plan_versions").select("id").eq("nutrition_plan_id", planId).eq("active", true).maybeSingle(),
+      supabase.from("nutrition_plan_versions").select("id, profile_snapshot, meal_count, calories, protein_grams, carbs_grams, fats_grams").eq("nutrition_plan_id", planId).eq("active", true).maybeSingle(),
       supabase.from("nutrition_plan_versions").select("version_number").eq("nutrition_plan_id", planId).order("version_number", { ascending: false }).limit(1).maybeSingle(),
     ]);
+    const currentSnapshot = oldVersion?.profile_snapshot as Record<string, unknown> | null;
+    const effectiveInputsChanged = !currentSnapshot
+      || !sameArray(currentSnapshot.food_restrictions, profile.food_restrictions)
+      || !sameArray(currentSnapshot.meals_out_slots, profile.meals_out_slots)
+      || currentSnapshot.meal_count !== mealCount
+      || currentSnapshot.diet_preference !== profile.diet_preference
+      || currentSnapshot.primary_goal !== profile.primary_goal
+      || Number(currentSnapshot.current_weight_kg) !== Number(profile.current_weight_kg);
+    if (oldVersion && !effectiveInputsChanged) {
+      return NextResponse.json({ regenerated: false, unchanged: true, type: "nutrition", message: "La dieta ya refleja tus datos actuales." });
+    }
     const { data: currentMeals } = preserveFoods && oldVersion
       ? await supabase.from("nutrition_meals").select("id, meal_order, target_calories").eq("nutrition_plan_version_id", oldVersion.id).order("meal_order")
       : { data: [] };

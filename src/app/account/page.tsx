@@ -6,7 +6,6 @@ import { AccountPrivacyForm } from "@/components/account-privacy-form";
 import { AppHeader } from "@/components/app-header";
 import { PremiumPlanCard } from "@/components/premium-plan-card";
 import { isAdminUser } from "@/lib/admin-access";
-import { getDaysSinceLastMeasurement } from "@/lib/last-measurement";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,12 +30,11 @@ export default async function AccountPage() {
   const dietPreference = profile?.diet_preference || "No indicada";
   const experience = profile?.experience || "No indicada";
   const createdAt = profile?.created_at ? new Date(profile.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" }) : "Sin fecha";
-  const daysSinceLastMeasurement = await getDaysSinceLastMeasurement(db, auth.user.id);
 
   return (
     <main className="min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
       <div className="mx-auto max-w-5xl">
-        <AppHeader email={auth.user.email ?? ""} name={initialName || "Mi cuenta"} daysSinceLastMeasurement={daysSinceLastMeasurement} hasProfile={Boolean(profile)} />
+        <AppHeader email={auth.user.email ?? ""} name={initialName || "Mi cuenta"} />
         <Link href="/dashboard" className="mt-6 inline-block text-sm font-semibold text-[#68736b] hover:text-[#18231f]">← Volver al panel</Link>
 
         {isAdminUser(auth.user) ? (

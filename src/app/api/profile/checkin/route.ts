@@ -17,6 +17,8 @@ const checkinSchema = z.object({
   foodRestrictions: z.array(z.string()).default([]),
   injuries: z.array(z.string()),
   selfReport: z.enum(["bien", "estancado"]),
+  mode: z.enum(["workout", "nutrition", "general"]).default("general"),
+  confirm: z.boolean().default(false),
 });
 
 function sameSet(a: string[], b: string[]) {
@@ -53,6 +55,27 @@ export async function POST(request: Request) {
     const restrictionsChanged = !sameSet(currentRestrictions, nextRestrictions);
     const foodRestrictionsChanged = !sameSet(currentFoodRestrictions, nextFoodRestrictions);
     const structuralChange = goalChanged || daysChanged || durationChanged || placeChanged || restrictionsChanged || foodRestrictionsChanged || profile.nutrition_plan_review_needed || profile.workout_plan_review_needed;
+    const updateWorkout = parsed.data.mode !== "nutrition";
+    const updateNutrition = parsed.data.mode !== "workout";
+
+    if (!parsed.data.confirm) {
+      const changed = [
+        goalChanged ? "objetivo" : null,
+        daysChanged ? "días de entrenamiento" : null,
+        durationChanged ? "duración de la sesión" : null,
+        placeChanged ? "lugar de entreno" : null,
+        foodRestrictionsChanged ? "alergias/intolerancias alimentarias" : null,
+        restrictionsChanged ? "lesiones/molestias" : null,
+      ].filter((value): value is string => Boolean(value));
+      const recommendation = restrictionsChanged
+        ? "review_health"
+        : structuralChange
+          ? "update_plan"
+          : parsed.data.selfReport === "estancado"
+            ? "review_progress"
+            : "keep_plan";
+      return NextResponse.json({ action: "recommendation", recommendation, changed, structuralChange });
+    }
 
     const updatedProfile = {
       ...profile,
@@ -83,11 +106,15 @@ export async function POST(request: Request) {
 
     const { data: workoutPlan } = await supabase.from("workout_plans").select("id").eq("user_id", userId).eq("active", true).maybeSingle();
     const { data: nutritionPlan } = await supabase.from("nutrition_plans").select("id").eq("user_id", userId).eq("active", true).maybeSingle();
-    if (!workoutPlan || !nutritionPlan) return NextResponse.json({ action: "profile_updated_only", changed: [] });
+    if ((updateWorkout && !workoutPlan) || (updateNutrition && !nutritionPlan)) return NextResponse.json({ action: "profile_updated_only", changed: [] });
 
-    const { data: currentWorkoutVersion } = await supabase.from("workout_plan_versions").select("id, version_number").eq("workout_plan_id", workoutPlan.id).eq("active", true).maybeSingle();
-    const { data: currentNutritionVersion } = await supabase.from("nutrition_plan_versions").select("id, version_number, meal_count").eq("nutrition_plan_id", nutritionPlan.id).eq("active", true).maybeSingle();
-    if (!currentWorkoutVersion || !currentNutritionVersion) return NextResponse.json({ action: "profile_updated_only", changed: [] });
+    const { data: currentWorkoutVersion } = updateWorkout && workoutPlan
+      ? await supabase.from("workout_plan_versions").select("id, version_number").eq("workout_plan_id", workoutPlan.id).eq("active", true).maybeSingle()
+      : { data: null };
+    const { data: currentNutritionVersion } = updateNutrition && nutritionPlan
+      ? await supabase.from("nutrition_plan_versions").select("id, version_number, meal_count").eq("nutrition_plan_id", nutritionPlan.id).eq("active", true).maybeSingle()
+      : { data: null };
+    if ((updateWorkout && !currentWorkoutVersion) || (updateNutrition && !currentNutritionVersion)) return NextResponse.json({ action: "profile_updated_only", changed: [] });
 
     const reason = goalChanged ? "goal_change" : placeChanged ? "equipment_change" : restrictionsChanged ? "injury_change" : "goal_change";
     const { data: latestMeasurement } = await supabase
@@ -108,7 +135,7 @@ export async function POST(request: Request) {
     const profileForEngine = {
       ...updatedProfile,
       current_weight_kg: latestMeasurement?.weight_kg ?? updatedProfile.current_weight_kg,
-      meal_count: currentNutritionVersion.meal_count ?? updatedProfile.meal_count ?? 4,
+      meal_count: currentNutritionVersion?.meal_count ?? updatedProfile.meal_count ?? 4,
     };
     const generatedPlan = generateInitialPlan(parsePlanningProfile(profileForEngine), await getPlanningExerciseCatalog());
 
@@ -119,62 +146,36 @@ export async function POST(request: Request) {
       .single();
     if (runError || !run) throw runError ?? new Error("Unable to start plan regeneration.");
 
-    await supabase.from("workout_plan_versions").update({ active: false }).eq("id", currentWorkoutVersion.id);
-    const { data: workoutVersion, error: workoutVersionError } = await supabase
-      .from("workout_plan_versions")
-      .insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: currentWorkoutVersion.version_number + 1, profile_snapshot: { ...profileForEngine, progress_snapshot: progressSnapshot }, reason })
-      .select("id")
-      .single();
-    if (workoutVersionError || !workoutVersion) throw workoutVersionError ?? new Error("Unable to create workout version.");
+    if (updateWorkout && workoutPlan && currentWorkoutVersion) {
+      await supabase.from("workout_plan_versions").update({ active: false }).eq("id", currentWorkoutVersion.id);
+      const { data: workoutVersion, error: workoutVersionError } = await supabase.from("workout_plan_versions").insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: currentWorkoutVersion.version_number + 1, profile_snapshot: { ...profileForEngine, progress_snapshot: progressSnapshot }, reason }).select("id").single();
+      if (workoutVersionError || !workoutVersion) throw workoutVersionError ?? new Error("Unable to create workout version.");
 
-    const exerciseNames = [...new Set(generatedPlan.days.flatMap((day) => day.exercises.map((exercise) => exercise.name)))];
-    const { data: exercises, error: exercisesError } = await supabase.from("exercises").select("id, name").in("name", exerciseNames);
-    if (exercisesError || !exercises) throw exercisesError ?? new Error("Exercise catalog is empty.");
-    const exerciseByName = new Map(exercises.map((exercise) => [exercise.name, exercise.id]));
-
-    for (const [dayIndex, day] of generatedPlan.days.entries()) {
-      const { data: workoutDay, error: dayError } = await supabase
-        .from("workout_days")
-        .insert({ workout_plan_version_id: workoutVersion.id, name: day.name, order_number: dayIndex + 1 })
-        .select("id")
-        .single();
-      if (dayError || !workoutDay) throw dayError ?? new Error("Unable to create workout day.");
-
-      const exercisesToInsert = day.exercises.map((exercise, exerciseIndex) => ({
-        workout_day_id: workoutDay.id,
-        exercise_id: exerciseByName.get(exercise.name)!,
-        sets: exercise.sets,
-        repetitions: exercise.repetitions,
-        rest_seconds: exercise.restSeconds,
-        order_number: exerciseIndex + 1,
-      }));
-      if (exercisesToInsert.some((exercise) => !exercise.exercise_id)) throw new Error("Generated exercise is missing from catalog.");
-      const { error: workoutExerciseError } = await supabase.from("workout_exercises").insert(exercisesToInsert);
-      if (workoutExerciseError) throw workoutExerciseError;
+      const exerciseNames = [...new Set(generatedPlan.days.flatMap((day) => day.exercises.map((exercise) => exercise.name)))];
+      const { data: exercises, error: exercisesError } = await supabase.from("exercises").select("id, name").in("name", exerciseNames);
+      if (exercisesError || !exercises) throw exercisesError ?? new Error("Exercise catalog is empty.");
+      const exerciseByName = new Map(exercises.map((exercise) => [exercise.name, exercise.id]));
+      for (const [dayIndex, day] of generatedPlan.days.entries()) {
+        const { data: workoutDay, error: dayError } = await supabase.from("workout_days").insert({ workout_plan_version_id: workoutVersion.id, name: day.name, order_number: dayIndex + 1 }).select("id").single();
+        if (dayError || !workoutDay) throw dayError ?? new Error("Unable to create workout day.");
+        const exercisesToInsert = day.exercises.map((exercise, exerciseIndex) => ({ workout_day_id: workoutDay.id, exercise_id: exerciseByName.get(exercise.name)!, sets: exercise.sets, repetitions: exercise.repetitions, rest_seconds: exercise.restSeconds, order_number: exerciseIndex + 1 }));
+        if (exercisesToInsert.some((exercise) => !exercise.exercise_id)) throw new Error("Generated exercise is missing from catalog.");
+        const { error: workoutExerciseError } = await supabase.from("workout_exercises").insert(exercisesToInsert);
+        if (workoutExerciseError) throw workoutExerciseError;
+      }
     }
 
-    await supabase.from("nutrition_plan_versions").update({ active: false }).eq("id", currentNutritionVersion.id);
-    const { data: nutritionVersion, error: nutritionVersionError } = await supabase.from("nutrition_plan_versions").insert({
-      nutrition_plan_id: nutritionPlan.id,
-      generation_run_id: run.id,
-      version_number: currentNutritionVersion.version_number + 1,
-      profile_snapshot: { ...profileForEngine, progress_snapshot: progressSnapshot },
-      calories: generatedPlan.calories,
-      protein_grams: generatedPlan.proteinGrams,
-      carbs_grams: generatedPlan.carbsGrams,
-      fats_grams: generatedPlan.fatsGrams,
-      meal_count: generatedPlan.mealCount,
-      precision_mode: "precise",
-      reason,
-    }).select("id").single();
-    if (nutritionVersionError || !nutritionVersion) throw nutritionVersionError ?? new Error("Unable to create nutrition version.");
+    if (updateNutrition && nutritionPlan && currentNutritionVersion) {
+      await supabase.from("nutrition_plan_versions").update({ active: false }).eq("id", currentNutritionVersion.id);
+      const { data: nutritionVersion, error: nutritionVersionError } = await supabase.from("nutrition_plan_versions").insert({ nutrition_plan_id: nutritionPlan.id, generation_run_id: run.id, version_number: currentNutritionVersion.version_number + 1, profile_snapshot: { ...profileForEngine, progress_snapshot: progressSnapshot }, calories: generatedPlan.calories, protein_grams: generatedPlan.proteinGrams, carbs_grams: generatedPlan.carbsGrams, fats_grams: generatedPlan.fatsGrams, meal_count: generatedPlan.mealCount, precision_mode: "precise", reason }).select("id").single();
+      if (nutritionVersionError || !nutritionVersion) throw nutritionVersionError ?? new Error("Unable to create nutrition version.");
 
-    const mealFoodNames = [...new Set(generatedPlan.meals.flatMap((meal) => meal.items.map((item) => item.name)))];
-    const { data: mealFoods, error: mealFoodsError } = await supabase.from("foods_catalog").select("id, name").in("name", mealFoodNames);
-    if (mealFoodsError || !mealFoods) throw mealFoodsError ?? new Error("Food catalog is empty.");
-    const foodByName = new Map(mealFoods.map((food) => [food.name, food.id]));
+      const mealFoodNames = [...new Set(generatedPlan.meals.flatMap((meal) => meal.items.map((item) => item.name)))];
+      const { data: mealFoods, error: mealFoodsError } = await supabase.from("foods_catalog").select("id, name").in("name", mealFoodNames);
+      if (mealFoodsError || !mealFoods) throw mealFoodsError ?? new Error("Food catalog is empty.");
+      const foodByName = new Map(mealFoods.map((food) => [food.name, food.id]));
 
-    for (const [mealIndex, meal] of generatedPlan.meals.entries()) {
+      for (const [mealIndex, meal] of generatedPlan.meals.entries()) {
       const { data: nutritionMeal, error: mealError } = await supabase.from("nutrition_meals").insert({
         nutrition_plan_version_id: nutritionVersion.id,
         name: meal.name,
@@ -194,12 +195,13 @@ export async function POST(request: Request) {
         weight_basis: item.weightBasis,
       }));
       if (mealItems.some((item) => !item.food_id)) throw new Error("Generated food is missing from catalog.");
-      const { error: mealItemsError } = await supabase.from("nutrition_meal_items").insert(mealItems);
-      if (mealItemsError) throw mealItemsError;
+        const { error: mealItemsError } = await supabase.from("nutrition_meal_items").insert(mealItems);
+        if (mealItemsError) throw mealItemsError;
+      }
     }
 
     await supabase.from("plan_generation_runs").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", run.id);
-    await supabase.from("profiles").update({ nutrition_plan_review_needed: false, workout_plan_review_needed: false }).eq("user_id", userId);
+    await supabase.from("profiles").update({ nutrition_plan_review_needed: updateNutrition ? false : profile.nutrition_plan_review_needed, workout_plan_review_needed: updateWorkout ? false : profile.workout_plan_review_needed }).eq("user_id", userId);
 
     const changed = [
       goalChanged ? "objetivo" : null,
@@ -210,7 +212,7 @@ export async function POST(request: Request) {
       restrictionsChanged ? "lesiones/molestias" : null,
     ].filter((value): value is string => Boolean(value));
 
-    return NextResponse.json({ action: "regenerated", changed, reason, structure: generatedPlan.structure, calories: generatedPlan.calories });
+    return NextResponse.json({ action: updateWorkout && updateNutrition ? "regenerated_both" : updateWorkout ? "regenerated_workout" : "regenerated_nutrition", changed, reason, structure: generatedPlan.structure, calories: generatedPlan.calories });
   } catch (error) {
     console.error("Unable to process check-in", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json({ error: "Unable to process check-in." }, { status: 500 });

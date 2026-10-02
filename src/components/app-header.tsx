@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
-import { AccountStatus } from "@/components/account-status";
-import { NotificationBell } from "@/components/notification-bell";
+import { AccountStatus, type GamificationSummary, type PersonalNotice } from "@/components/account-status";
+import { GamificationStatus } from "@/components/gamification-status";
 
-type AppHeaderProps = { email: string; name: string; daysSinceLastMeasurement: number | null; hasProfile: boolean; workoutLabel?: string | null; workoutHref?: string | null; workoutDue?: boolean };
+type AppHeaderProps = { email: string; name: string; gamification?: GamificationSummary; notices?: PersonalNotice[]; [key: string]: unknown };
 
-export function AppHeader({ email, name, daysSinceLastMeasurement, hasProfile, workoutLabel, workoutHref, workoutDue }: AppHeaderProps) {
+export function AppHeader({ email, name, gamification, notices }: AppHeaderProps) {
   return (
     <header className="flex items-center justify-between">
       <Link href="/" className="flex items-center gap-3" aria-label="Volver a la portada de Momentum">
@@ -14,8 +14,8 @@ export function AppHeader({ email, name, daysSinceLastMeasurement, hasProfile, w
         <span className="font-semibold">Momentum</span>
       </Link>
       <div className="flex items-center gap-3">
-        <NotificationBell daysSinceLastMeasurement={daysSinceLastMeasurement} hasProfile={hasProfile} workoutLabel={workoutLabel} workoutHref={workoutHref} workoutDue={workoutDue} />
-        <AccountStatus email={email} name={name} />
+        {gamification ? <GamificationStatus email={email} summary={gamification} /> : null}
+        <AccountStatus email={email} name={name} notices={notices} />
       </div>
     </header>
   );

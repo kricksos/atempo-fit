@@ -1,6 +1,7 @@
 "use client";
 
 import { ChefHat, Check, ChevronDown, LoaderCircle, MapPin, RefreshCw, ShoppingBasket } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -239,6 +240,7 @@ export function NutritionPlan({ meals, alternatives, foodIds, mealCount, todayCo
         <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#819078]">Comidas al día</p><div className="flex flex-wrap gap-2">{[3, 4, 5, 6].map((option) => <button key={option} type="button" disabled={isChangingMealCount || option === mealCount} onClick={() => changeMealCount(option)} className={`inline-flex min-w-12 items-center justify-center rounded-full border px-3 py-2 text-sm font-semibold ${option === mealCount ? "border-[#72873f] bg-[#e7f5b4] text-[#60703d]" : "border-[#cfd7c8] text-[#68736b] hover:border-[#72873f]"}`}>{isChangingMealCount && option !== mealCount ? <LoaderCircle size={15} className="animate-spin" /> : option}</button>)}</div></div>
       </div>
       <p className="mt-3 text-sm text-[#68736b]">Pesos en gramos, indicados como cocinados o servidos. El modo preciso es el estándar de Momentum.</p>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d3dbcf] bg-white/60 p-4"><div><p className="text-sm font-semibold">Gestiona tu alimentación</p><p className="mt-1 text-xs text-[#68736b]">Consulta la dieta activa y revisa las versiones que has tenido.</p></div><Link href="/nutrition/builder" className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-4 py-2 text-xs font-semibold text-white"><ChefHat size={15} /> Gestionar dietas</Link></div>
       <div className="mt-5 rounded-2xl border border-[#d3dbcf] bg-white/50 p-4">
         <button type="button" onClick={() => setMealsOutOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={mealsOutOpen}>
           <span className="flex items-center gap-3"><MapPin className="text-[#72873f]" size={18} /><span><span className="block text-sm font-semibold">Comidas fuera de casa</span><span className="block text-xs text-[#819078]">¿Trabajas, estudias o te desplazas? Marca las comidas que te cuesta hacer en casa y recibirás una guía más fácil para resolverlas fuera.</span></span></span>

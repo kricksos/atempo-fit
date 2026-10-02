@@ -1,6 +1,10 @@
 import { ArrowUpRight, Check, ChevronRight, Clock3, ShieldCheck, Sparkles } from "lucide-react";
 
 import { HeaderAccount } from "@/components/header-account";
+import type { GamificationSummary } from "@/components/account-status";
+import { unifiedActivityDates, weeklyActivity } from "@/features/gamification/activity";
+import { computeGamification, computeStreaks } from "@/features/gamification/xp";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const benefits = [
@@ -15,6 +19,59 @@ export default async function Home() {
   const { data } = await supabase.auth.getUser();
   const user = data.user;
   const userName = typeof user?.user_metadata?.name === "string" ? user.user_metadata.name : "Mi cuenta";
+  const homeAction = user ? { href: "/dashboard", label: "Ir a mi espacio" } : { href: "/onboarding", label: "Comenzar mi plan" };
+  let gamification: GamificationSummary | undefined;
+  if (user) {
+    const db = createAdminClient();
+    const [{ data: profile }, { data: sessions }, { data: measurements }, { data: nutritionPlan }] = await Promise.all([
+      db.from("profiles").select("target_weight_kg").eq("user_id", user.id).maybeSingle(),
+      db.from("workout_sessions").select("completed_at").eq("user_id", user.id).eq("completed", true).order("completed_at", { ascending: true }),
+      db.from("body_measurements").select("measured_at, weight_kg, waist_cm, chest_cm, arm_cm, thigh_cm").eq("user_id", user.id).order("measured_at", { ascending: true }),
+      db.from("nutrition_plans").select("id").eq("user_id", user.id).eq("active", true).maybeSingle(),
+    ]);
+    let nutritionCompletedDates: string[] = [];
+    if (nutritionPlan) {
+      const { data: nutritionVersion } = await db.from("nutrition_plan_versions").select("id").eq("nutrition_plan_id", nutritionPlan.id).eq("active", true).maybeSingle();
+      if (nutritionVersion) {
+        const [{ data: meals }, { data: completions }] = await Promise.all([
+          db.from("nutrition_meals").select("id").eq("nutrition_plan_version_id", nutritionVersion.id),
+          db.from("nutrition_meal_completions").select("meal_id, completed_on").eq("user_id", user.id),
+        ]);
+        const mealCount = meals?.length ?? 0;
+        const mealsByDate = new Map<string, Set<string>>();
+        for (const completion of completions ?? []) {
+          if (!completion.completed_on) continue;
+          const dateMeals = mealsByDate.get(completion.completed_on) ?? new Set<string>();
+          dateMeals.add(completion.meal_id);
+          mealsByDate.set(completion.completed_on, dateMeals);
+        }
+        nutritionCompletedDates = mealCount > 0 ? [...mealsByDate.entries()].filter(([, dateMeals]) => dateMeals.size >= mealCount).map(([date]) => date) : [];
+      }
+    }
+    const activityDates = unifiedActivityDates([
+      ...(sessions ?? []).map((session) => [(session.completed_at ?? "").slice(0, 10)]),
+      (measurements ?? []).map((measurement) => measurement.measured_at),
+      nutritionCompletedDates,
+    ]);
+    const { current: currentStreak, best: bestStreak } = computeStreaks(activityDates);
+    const weeklyProgress = weeklyActivity(activityDates);
+    const firstMeasurement = measurements?.[0];
+    const latestMeasurement = measurements?.[measurements.length - 1];
+    const weightDeltaKg = firstMeasurement && latestMeasurement && firstMeasurement.measured_at !== latestMeasurement.measured_at ? latestMeasurement.weight_kg - firstMeasurement.weight_kg : null;
+    const calculatedGamification = computeGamification({
+      workoutSessionsCount: sessions?.length ?? 0,
+      measurementsCount: measurements?.length ?? 0,
+      nutritionDaysCount: nutritionCompletedDates.length,
+      bodyMeasurementsCount: (measurements ?? []).filter((measurement) => measurement.waist_cm !== null || measurement.chest_cm !== null || measurement.arm_cm !== null || measurement.thigh_cm !== null).length,
+      bestStreak,
+      weightDeltaKg,
+      targetSet: profile?.target_weight_kg !== null && profile?.target_weight_kg !== undefined,
+      targetReached: profile?.target_weight_kg !== null && profile?.target_weight_kg !== undefined && latestMeasurement !== undefined && Math.abs(latestMeasurement.weight_kg - profile.target_weight_kg) <= 0.5,
+      weeklyActiveDays: weeklyProgress.current.activeDays,
+      completedWeeklyGoals: weeklyProgress.completedWeeks,
+    });
+    gamification = { ...calculatedGamification, currentStreak, bestStreak };
+  }
 
   return (
     <div className="min-h-screen overflow-hidden bg-[#f4f1e9] text-[#18231f]">
@@ -30,7 +87,7 @@ export default async function Home() {
           <a className="transition-colors hover:text-[#18231f]" href="#personalization">Personalización</a>
           <a className="transition-colors hover:text-[#18231f]" href="#preview">Vista previa</a>
         </nav>
-        <HeaderAccount initialUser={user ? { email: user.email ?? "", name: userName } : null} />
+        <HeaderAccount initialUser={user ? { email: user.email ?? "", name: userName } : null} gamification={gamification} />
       </header>
 
       <main id="top">
@@ -46,8 +103,8 @@ export default async function Home() {
               Crea una rutina y una guía nutricional adaptadas a tus objetivos, tu tiempo y tu forma de entrenar.
             </p>
             <div id="start" className="mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
-              <a href="/onboarding" className="inline-flex items-center justify-center gap-2 rounded-full bg-[#18231f] px-6 py-3.5 text-sm font-semibold text-[#f6f4ed] transition-transform hover:-translate-y-0.5">
-                Comenzar mi plan <ArrowUpRight size={17} />
+              <a href={homeAction.href} className="inline-flex items-center justify-center gap-2 rounded-full bg-[#18231f] px-6 py-3.5 text-sm font-semibold text-[#f6f4ed] transition-transform hover:-translate-y-0.5">
+                {homeAction.label} <ArrowUpRight size={17} />
               </a>
               <span className="flex items-center gap-2 text-sm text-[#69736c]"><Clock3 size={16} /> Menos de 5 minutos · Sin compromiso</span>
             </div>
@@ -92,7 +149,7 @@ export default async function Home() {
 
         <section id="personalization" className="mx-auto grid max-w-7xl gap-14 px-6 py-20 lg:grid-cols-[0.8fr_1.2fr] lg:px-10 lg:py-28"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#819078]">Personalización de verdad</p><h2 className="mt-4 text-4xl font-semibold tracking-[-0.06em] sm:text-5xl">No tienes que encajar en un plan.</h2><p className="mt-6 max-w-md leading-8 text-[#68736b]">Momentum tiene en cuenta el contexto detrás del objetivo para ayudarte a avanzar sin convertir el progreso en otra fuente de presión.</p></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{["Objetivo", "Experiencia", "Disponibilidad", "Equipamiento", "Sueño", "Preferencias"].map((item) => <div key={item} className="min-h-32 rounded-2xl border border-[#d9ddd3] bg-[#f8f7f1] p-5"><span className="grid size-8 place-items-center rounded-full bg-[#e7f5b4] text-sm font-semibold text-[#60703d]">✓</span><p className="mt-8 font-medium">{item}</p></div>)}</div></section>
 
-        <section className="border-t border-[#d9ddd3] bg-[#e7f5b4] px-6 py-16 lg:px-10 lg:py-20"><div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#60703d]">Empieza desde donde estás</p><h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] sm:text-4xl">Tu siguiente paso puede ser sencillo.</h2></div><a href="/onboarding" className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-6 py-3.5 text-sm font-semibold text-[#f6f4ed]">Comenzar mi plan <ArrowUpRight size={17} /></a></div></section>
+        <section className="border-t border-[#d9ddd3] bg-[#e7f5b4] px-6 py-16 lg:px-10 lg:py-20"><div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#60703d]">Empieza desde donde estás</p><h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] sm:text-4xl">Tu siguiente paso puede ser sencillo.</h2></div><a href={homeAction.href} className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-6 py-3.5 text-sm font-semibold text-[#f6f4ed]">{homeAction.label} <ArrowUpRight size={17} /></a></div></section>
       </main>
 
       <footer className="border-t border-[#d9ddd3] px-6 py-8 lg:px-10"><div className="mx-auto flex max-w-7xl flex-col gap-5 text-sm text-[#68736b] sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-[#18231f]">Momentum</p><p className="mt-1">Tu plan. Tu ritmo. Tu progreso.</p></div><nav className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Información legal"><a href="/privacy" target="_blank" rel="noreferrer" className="hover:text-[#18231f]">Privacidad</a><a href="/terms" target="_blank" rel="noreferrer" className="hover:text-[#18231f]">Términos</a><a href="/cookies" target="_blank" rel="noreferrer" className="hover:text-[#18231f]">Cookies</a><a href="/legal-notice" target="_blank" rel="noreferrer" className="hover:text-[#18231f]">Aviso legal</a><a href="/health-safety" target="_blank" rel="noreferrer" className="hover:text-[#18231f]">Salud y seguridad</a></nav><p>© 2026 Momentum</p></div></footer>

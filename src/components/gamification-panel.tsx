@@ -1,6 +1,6 @@
 import { Dumbbell, Flame, LineChart, Trophy } from "lucide-react";
 
-type AchievementCategory = "entrenamiento" | "constancia" | "progreso";
+type AchievementCategory = "entrenamiento" | "nutrición" | "seguimiento" | "constancia" | "objetivos" | "progreso";
 type Achievement = { id: string; title: string; xp: number; unlocked: boolean; category: AchievementCategory };
 
 type GamificationPanelProps = {
@@ -17,7 +17,10 @@ type GamificationPanelProps = {
 
 const categoryMeta: Record<AchievementCategory, { label: string; icon: typeof Dumbbell }> = {
   entrenamiento: { label: "Entrenamiento", icon: Dumbbell },
+  nutrición: { label: "Nutrición", icon: Flame },
+  seguimiento: { label: "Seguimiento", icon: LineChart },
   constancia: { label: "Constancia", icon: Flame },
+  objetivos: { label: "Objetivos", icon: Trophy },
   progreso: { label: "Progreso", icon: LineChart },
 };
 
