@@ -21,9 +21,9 @@ export function LegalPage({ eyebrow, title, updatedAt = "12 de septiembre de 202
     <main className="min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
       <div className="mx-auto max-w-4xl">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d9ddd3] pb-6">
-          <Link href="/" className="flex items-center gap-3" aria-label="Volver a Momentum">
+          <Link href="/" className="flex items-center gap-3" aria-label="Volver a Atempo Fit">
             <span className="grid size-10 place-items-center rounded-xl bg-[#18231f] text-[#d7f36b]">M</span>
-            <span className="font-semibold">Momentum</span>
+            <span className="font-semibold">Atempo Fit</span>
           </Link>
           <Link href="/register" className="text-sm font-semibold text-[#60703d] hover:text-[#18231f]">Crear cuenta</Link>
         </header>

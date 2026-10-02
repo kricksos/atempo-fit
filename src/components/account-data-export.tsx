@@ -19,7 +19,7 @@ export function AccountDataExport() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "momentum-datos.json";
+      link.download = "atempo-fit-datos.json";
       document.body.appendChild(link);
       link.click();
       link.remove();

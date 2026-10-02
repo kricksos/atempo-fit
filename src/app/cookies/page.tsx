@@ -1,6 +1,6 @@
 import { LegalList, LegalPage, LegalSection } from "@/components/legal-page";
 
-export const metadata = { title: "Política de cookies | Momentum", description: "Información sobre cookies y tecnologías similares en Momentum." };
+export const metadata = { title: "Política de cookies | Atempo Fit", description: "Información sobre cookies y tecnologías similares en Atempo Fit." };
 
 export default function CookiesPage() {
   return <LegalPage eyebrow="Control de tecnologías" title="Política de cookies">
@@ -8,7 +8,7 @@ export default function CookiesPage() {
       <p>Las cookies y tecnologías similares son pequeños datos que un sitio puede guardar en el dispositivo para mantener una sesión, recordar preferencias o medir el uso.</p>
     </LegalSection>
     <LegalSection title="2. Cookies necesarias">
-      <p>Momentum puede usar cookies estrictamente necesarias para autenticación, seguridad, gestión de sesión y funcionamiento técnico. No requieren consentimiento cuando son imprescindibles para prestar el servicio solicitado.</p>
+      <p>Atempo Fit puede usar cookies estrictamente necesarias para autenticación, seguridad, gestión de sesión y funcionamiento técnico. No requieren consentimiento cuando son imprescindibles para prestar el servicio solicitado.</p>
       <LegalList><li>Sesión de autenticación.</li><li>Protección y continuidad del flujo de onboarding.</li><li>Preferencias necesarias para seguridad y funcionamiento.</li></LegalList>
     </LegalSection>
     <LegalSection title="3. Analítica no esencial">

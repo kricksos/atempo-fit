@@ -13,7 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Momentum | Tu plan. Tu ritmo. Tu progreso.",
+  applicationName: "Atempo Fit",
+  title: "Atempo Fit | Tu plan. Tu ritmo. Tu progreso.",
   description: "Una planificación de entrenamiento y nutrición adaptada a tu situación real.",
 };
 

@@ -85,7 +85,7 @@ export async function GET() {
     status: 200,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename="momentum-datos-${new Date().toISOString().slice(0, 10)}.json"`,
+      "Content-Disposition": `attachment; filename="atempo-fit-datos-${new Date().toISOString().slice(0, 10)}.json"`,
       "Cache-Control": "private, no-store",
     },
   });

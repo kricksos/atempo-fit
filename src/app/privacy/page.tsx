@@ -1,6 +1,6 @@
 import { LegalList, LegalPage, LegalSection } from "@/components/legal-page";
 
-export const metadata = { title: "Política de privacidad | Momentum", description: "Información sobre el tratamiento de datos personales en Momentum." };
+export const metadata = { title: "Política de privacidad | Atempo Fit", description: "Información sobre el tratamiento de datos personales en Atempo Fit." };
 
 export default function PrivacyPage() {
   return <LegalPage eyebrow="Transparencia" title="Política de privacidad">
@@ -8,14 +8,14 @@ export default function PrivacyPage() {
       <p><strong>Responsable:</strong> [NOMBRE O RAZÓN SOCIAL PENDIENTE DE COMPLETAR]</p>
       <p><strong>NIF/CIF:</strong> [PENDIENTE] · <strong>Domicilio:</strong> [PENDIENTE]</p>
       <p><strong>Contacto de privacidad:</strong> [EMAIL LEGAL PENDIENTE]</p>
-      <p>Estos datos deben completarse antes de publicar Momentum para identificar al responsable conforme al RGPD, la LOPDGDD y la LSSI-CE.</p>
+      <p>Estos datos deben completarse antes de publicar Atempo Fit para identificar al responsable conforme al RGPD, la LOPDGDD y la LSSI-CE.</p>
     </LegalSection>
     <LegalSection title="2. Qué datos tratamos">
       <LegalList><li>Datos de cuenta: nombre, email y credenciales gestionadas por nuestro proveedor de autenticación.</li><li>Datos de perfil y objetivos: edad, medidas, experiencia, disponibilidad, preferencias y equipamiento.</li><li>Datos de entrenamiento, progreso, nutrición, alergias e intolerancias.</li><li>Datos de salud declarados voluntariamente, como lesiones o limitaciones físicas, solo cuando el usuario los facilita.</li><li>Consentimientos, solicitudes de derechos, registros técnicos y eventos de uso.</li></LegalList>
     </LegalSection>
     <LegalSection title="3. Para qué los usamos">
       <LegalList><li>Crear y proteger la cuenta.</li><li>Generar y mostrar planes de entrenamiento y nutrición orientativos.</li><li>Registrar sesiones, medidas y progreso solicitado por el usuario.</li><li>Atender solicitudes, mantener la seguridad y resolver incidencias.</li><li>Medir y mejorar el servicio con analítica no esencial únicamente cuando exista consentimiento.</li></LegalList>
-      <p>No vendemos datos ni los usamos para publicidad personalizada invasiva. Momentum no sustituye a profesionales sanitarios.</p>
+      <p>No vendemos datos ni los usamos para publicidad personalizada invasiva. Atempo Fit no sustituye a profesionales sanitarios.</p>
     </LegalSection>
     <LegalSection title="4. Bases jurídicas y datos de salud">
       <p>La gestión de la cuenta y la prestación del servicio se basan en la ejecución del contrato o de medidas precontractuales. Las comunicaciones y tratamientos opcionales se basan en el consentimiento, que puede retirarse en cualquier momento.</p>

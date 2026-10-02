@@ -1,6 +1,6 @@
 import { LegalList, LegalPage, LegalSection } from "@/components/legal-page";
 
-export const metadata = { title: "Aviso legal | Momentum", description: "Información legal del titular y del servicio Momentum." };
+export const metadata = { title: "Aviso legal | Atempo Fit", description: "Información legal del titular y del servicio Atempo Fit." };
 
 export default function LegalNoticePage() {
   return <LegalPage eyebrow="Información corporativa" title="Aviso legal">
@@ -13,7 +13,7 @@ export default function LegalNoticePage() {
       <p>Estos campos son obligatorios para la publicación comercial y deben sustituirse por datos reales antes del despliegue.</p>
     </LegalSection>
     <LegalSection title="2. Objeto">
-      <p>Este sitio presenta y permite utilizar Momentum, una plataforma digital de planificación orientativa de entrenamiento, nutrición y seguimiento del progreso.</p>
+      <p>Este sitio presenta y permite utilizar Atempo Fit, una plataforma digital de planificación orientativa de entrenamiento, nutrición y seguimiento del progreso.</p>
     </LegalSection>
     <LegalSection title="3. Condiciones de acceso">
       <p>El acceso y uso del sitio implica aceptar las condiciones aplicables. El titular puede actualizar contenidos, suspender funcionalidades por mantenimiento o limitar accesos para proteger el servicio.</p>
@@ -23,7 +23,7 @@ export default function LegalNoticePage() {
     </LegalSection>
     <LegalSection title="5. Enlaces y responsabilidad">
       <p>Los enlaces a terceros pueden estar sujetos a sus propias condiciones y políticas. El titular no controla ni garantiza el contenido, disponibilidad o seguridad de sitios externos.</p>
-      <p>La información de Momentum no sustituye consejo médico, nutricional o deportivo profesional. Consulta el <a className="font-semibold text-[#60703d] underline" href="/health-safety">aviso de salud y seguridad</a>.</p>
+      <p>La información de Atempo Fit no sustituye consejo médico, nutricional o deportivo profesional. Consulta el <a className="font-semibold text-[#60703d] underline" href="/health-safety">aviso de salud y seguridad</a>.</p>
     </LegalSection>
     <LegalSection title="6. Comunicaciones y reclamaciones">
       <LegalList><li>Consultas generales: [EMAIL DE SOPORTE PENDIENTE].</li><li>Privacidad y derechos: [EMAIL LEGAL PENDIENTE].</li><li>Reclamaciones: [DIRECCIÓN O CANAL PENDIENTE].</li></LegalList>

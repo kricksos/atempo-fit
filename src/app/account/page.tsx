@@ -42,7 +42,7 @@ export default async function AccountPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d7f36b]">Acceso de administrador</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Panel operativo de Momentum</h2>
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Panel operativo de Atempo Fit</h2>
               </div>
               <Link href="/admin" className="inline-flex items-center justify-center rounded-full bg-[#d7f36b] px-4 py-2.5 text-sm font-semibold text-[#18231f] transition hover:brightness-95">
                 Abrir panel admin

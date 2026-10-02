@@ -65,7 +65,7 @@ export function AssistantChat() {
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold tracking-[-0.02em]">Asistente Momentum</p>
+                  <p className="text-sm font-semibold tracking-[-0.02em]">Asistente Atempo Fit</p>
                   <span className="h-2.5 w-2.5 rounded-full bg-[#d9f56f] shadow-[0_0_12px_rgba(217,245,111,0.9)]" />
                 </div>
                 <p className="text-[11px] text-[#b9c2b7]">Tu coach personal en tiempo real</p>
@@ -119,7 +119,7 @@ export function AssistantChat() {
           type="button"
           onClick={() => setIsOpen(true)}
           className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-3 rounded-full border border-[#d9f56f]/80 bg-[radial-gradient(circle_at_20%_20%,_rgba(255,255,255,0.8),_transparent_30%),linear-gradient(135deg,_#d9f56f_0%,_#eff9b7_45%,_#dfeaff_100%)] px-4 py-3 text-sm font-semibold text-[#18231f] shadow-[0_18px_42px_rgba(24,35,31,0.22),0_0_0_1px_rgba(255,255,255,0.4)] transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] hover:shadow-[0_22px_56px_rgba(24,35,31,0.28)]"
-          aria-label="Abrir asistente Momentum"
+          aria-label="Abrir asistente Atempo Fit"
         >
           <span className="grid size-8 place-items-center rounded-full bg-[#18231f] text-[#f6f7f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
             <Bot size={16} />

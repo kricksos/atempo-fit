@@ -98,7 +98,7 @@ export async function POST(request: Request) {
     const values = answerMap(answers);
     const profile = {
       user_id: authData.user.id,
-      name: textValue(authData.user.user_metadata?.name) || "Usuario Momentum",
+      name: textValue(authData.user.user_metadata?.name) || "Usuario Atempo Fit",
       motivation: textValue(values.get("motivation")) || null,
       sex: normalizeSex(values.get("sex")),
       age: numericValue(values.get("age")),

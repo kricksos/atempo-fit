@@ -51,7 +51,7 @@ function ResetPasswordForm() {
             <ShieldCheck size={20} />
           </div>
           <h1 className="mt-6 text-3xl font-semibold tracking-[-0.05em]">Nueva contraseña</h1>
-          <p className="mt-3 text-base leading-7 text-[#68736b]">Crea una contraseña segura para volver a entrar en Momentum.</p>
+          <p className="mt-3 text-base leading-7 text-[#68736b]">Crea una contraseña segura para volver a entrar en Atempo Fit.</p>
 
           {passwordUpdated ? <section className="mt-7 rounded-2xl border border-[#d3dbcf] bg-white/70 p-5"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0 text-[#72873f]" size={20} /><div><p className="font-semibold text-[#18231f]">Contraseña actualizada</p><p className="mt-2 text-sm leading-6 text-[#68736b]">Tu contraseña se ha cambiado correctamente. Ya puedes iniciar sesión con ella.</p></div></div><Link href="/login" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#18231f] px-6 py-3.5 text-sm font-semibold text-[#f6f4ed]">Ir al login <ArrowRight size={17} /></Link></section> : <form onSubmit={handleSubmit} className="mt-7 space-y-4">
             <label className="block text-sm font-medium">

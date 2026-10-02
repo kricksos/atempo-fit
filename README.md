@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Atempo Fit
 
-## Getting Started
+Atempo Fit ayuda a crear y mantener un plan personal de entrenamiento, nutrición y seguimiento del progreso, adaptado al objetivo, experiencia, disponibilidad y equipamiento de cada persona.
 
-First, run the development server:
+## Stack
+
+- Next.js App Router y React
+- TypeScript y Tailwind CSS
+- Supabase Auth, PostgreSQL y Row Level Security
+- Vercel para despliegue
+
+## Desarrollo local
+
+Requisitos: Node.js y un proyecto Supabase configurado.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La aplicación estará disponible en `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Crea `.env.local` a partir de `.env.example` y añade las credenciales del proyecto Supabase. No publiques ese archivo ni compartas claves de servicio.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Validación
 
-## Learn More
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Base de datos
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Las migraciones de Supabase están en `supabase/migrations`. Deben aplicarse en orden en el proyecto correspondiente. Las migraciones `0040` a `0044` importan, normalizan, curan y limpian el catálogo de ejercicios; revisa su estado antes de ejecutarlas en producción.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Seguridad y publicación
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Antes de publicar, configura un SMTP transaccional verificado, las URLs de redirección de Auth, el dominio de producción y las variables de entorno en Vercel. Completa también los datos legales pendientes en las páginas de privacidad y condiciones.

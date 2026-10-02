@@ -9,9 +9,9 @@ type AppHeaderProps = { email: string; name: string; gamification?: Gamification
 export function AppHeader({ email, name, gamification, notices }: AppHeaderProps) {
   return (
     <header className="flex items-center justify-between">
-      <Link href="/" className="flex items-center gap-3" aria-label="Volver a la portada de Momentum">
+      <Link href="/" className="flex items-center gap-3" aria-label="Volver a la portada de Atempo Fit">
         <span className="grid size-10 place-items-center rounded-xl bg-[#18231f] text-[#d7f36b]"><Sparkles size={18} /></span>
-        <span className="font-semibold">Momentum</span>
+        <span className="font-semibold">Atempo Fit</span>
       </Link>
       <div className="flex items-center gap-3">
         {gamification ? <GamificationStatus email={email} summary={gamification} /> : null}
