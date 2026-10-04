@@ -123,7 +123,7 @@ export default function OnboardingPage() {
 
     const conversion = (await conversionResponse.json().catch(() => ({}))) as { converted?: boolean; planningMode?: "auto" | "manual" };
 
-    if (conversionResponse.ok) {
+    if (conversion.converted) {
       window.sessionStorage.removeItem("momentum_onboarding_token");
       window.localStorage.removeItem("momentum_onboarding_token");
     }
