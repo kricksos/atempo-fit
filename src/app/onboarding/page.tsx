@@ -46,6 +46,12 @@ const optionDescriptions: Record<string, Record<string, string>> = {
     Casa: "Peso corporal, bandas, mancuernas o kettlebell, según lo que tengas.",
     Mixto: "Combinas casa y gimnasio según el día o la disponibilidad.",
   },
+  diet: {
+    Omnívoro: "Comes de todo: carne, pescado, huevos, lácteos y vegetales.",
+    Vegetariano: "Sin carne ni pescado; sí huevos y lácteos.",
+    Vegano: "Sin ningún producto de origen animal: ni carne, ni pescado, ni huevos, ni lácteos.",
+    Otra: "Otro patrón (por ejemplo, sin gluten o sin lactosa). Indica alergias e intolerancias en la siguiente pregunta.",
+  },
 };
 
 type Answer = string | number | string[];
