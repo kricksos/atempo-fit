@@ -121,10 +121,18 @@ export default function OnboardingPage() {
       body: JSON.stringify({ sessionToken }),
     });
 
+    const conversion = (await conversionResponse.json().catch(() => ({}))) as { converted?: boolean; planningMode?: "auto" | "manual" };
+
     if (conversionResponse.ok) {
       window.sessionStorage.removeItem("momentum_onboarding_token");
+      window.localStorage.removeItem("momentum_onboarding_token");
     }
-    router.push("/preview");
+
+    if (conversion.converted && conversion.planningMode !== "manual") {
+      await fetch("/api/plans/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+    }
+
+    router.push(conversion.converted && conversion.planningMode === "manual" ? "/workout/builder" : "/preview");
   }
 
   async function goNext() {
