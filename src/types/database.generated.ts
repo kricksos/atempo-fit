@@ -14,6 +14,18 @@ export type Database = {
   }
   public: {
     Tables: {
+      favorite_exercises: {
+        Row: { user_id: string; exercise_id: string }
+        Insert: { user_id: string; exercise_id: string }
+        Update: { user_id?: string; exercise_id?: string }
+        Relationships: []
+      }
+      favorite_workout_templates: {
+        Row: { user_id: string; template_id: string }
+        Insert: { user_id: string; template_id: string }
+        Update: { user_id?: string; template_id?: string }
+        Relationships: []
+      }
       activity_events: {
         Row: {
           activity_date: string
@@ -283,6 +295,7 @@ export type Database = {
         Row: {
           completed: boolean
           created_at: string
+          duration_seconds: number | null
           exercise_id: string
           id: string
           repetitions: number
@@ -293,6 +306,7 @@ export type Database = {
         Insert: {
           completed?: boolean
           created_at?: string
+          duration_seconds?: number | null
           exercise_id: string
           id?: string
           repetitions: number
@@ -303,6 +317,7 @@ export type Database = {
         Update: {
           completed?: boolean
           created_at?: string
+          duration_seconds?: number | null
           exercise_id?: string
           id?: string
           repetitions?: number
@@ -557,7 +572,9 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_favorite: boolean
           name: string
+          published_at: string | null
           source: string
           updated_at: string
           user_id: string
@@ -565,7 +582,9 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_favorite?: boolean
           name?: string
+          published_at?: string | null
           source: string
           updated_at?: string
           user_id: string
@@ -573,7 +592,9 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_favorite?: boolean
           name?: string
+          published_at?: string | null
           source?: string
           updated_at?: string
           user_id?: string
@@ -1158,7 +1179,10 @@ export type Database = {
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
           target_weight_kg: number | null
+          training_continuity: string | null
+          training_equipment: Json | null
           training_place: string | null
+          training_technique: string | null
           updated_at: string
           user_id: string
           workout_plan_review_needed: boolean
@@ -1198,7 +1222,10 @@ export type Database = {
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           target_weight_kg?: number | null
+          training_continuity?: string | null
+          training_equipment?: Json | null
           training_place?: string | null
+          training_technique?: string | null
           updated_at?: string
           user_id: string
           workout_plan_review_needed?: boolean
@@ -1238,7 +1265,10 @@ export type Database = {
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           target_weight_kg?: number | null
+          training_continuity?: string | null
+          training_equipment?: Json | null
           training_place?: string | null
+          training_technique?: string | null
           updated_at?: string
           user_id?: string
           workout_plan_review_needed?: boolean
@@ -1521,7 +1551,9 @@ export type Database = {
           active: boolean
           created_at: string
           description: string | null
+          hidden_at: string | null
           id: string
+          is_favorite: boolean
           name: string
           source: string
           updated_at: string
@@ -1531,7 +1563,9 @@ export type Database = {
           active?: boolean
           created_at?: string
           description?: string | null
+          hidden_at?: string | null
           id?: string
+          is_favorite?: boolean
           name: string
           source?: string
           updated_at?: string
@@ -1541,7 +1575,9 @@ export type Database = {
           active?: boolean
           created_at?: string
           description?: string | null
+          hidden_at?: string | null
           id?: string
+          is_favorite?: boolean
           name?: string
           source?: string
           updated_at?: string
@@ -1634,7 +1670,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      publish_adjusted_workout: {
+        Args: { p_user_id: string; p_plan_id: string; p_expected_version_id: string; p_run_id: string; p_profile: Json; p_days: Json }
+        Returns: string
+      }
+      publish_manual_workout_draft: {
+        Args: { p_draft_id: string; p_user_id: string }
+        Returns: string
+      }
+      save_manual_workout_draft: {
+        Args: { p_days: Json; p_draft_id: string; p_name: string; p_user_id: string }
+        Returns: string
+      }
     }
     Enums: {
       activity_type: "login" | "workout" | "weight" | "measurement"

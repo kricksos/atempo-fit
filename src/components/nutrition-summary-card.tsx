@@ -1,7 +1,10 @@
 "use client";
 
-import { Check, Flame, LoaderCircle } from "lucide-react";
+import { Apple, ArrowUpRight, Check, LoaderCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+
+import { saveNutritionCompletions } from "@/features/planning/nutrition-completion-client";
 
 type NutritionSummaryCardProps = {
   calories: number;
@@ -11,6 +14,7 @@ type NutritionSummaryCardProps = {
   mealIds: string[];
   todayCompletedMealIds: string[];
   completedDates: string[];
+  preview?: boolean;
 };
 
 function todayKey() {
@@ -33,7 +37,8 @@ function weekDates(value: string) {
   });
 }
 
-export function NutritionSummaryCard({ calories, proteinGrams, carbsGrams, fatsGrams, mealIds, todayCompletedMealIds, completedDates }: NutritionSummaryCardProps) {
+export function NutritionSummaryCard({ calories, proteinGrams, carbsGrams, fatsGrams, mealIds, todayCompletedMealIds, completedDates, preview = false }: NutritionSummaryCardProps) {
+  const router = useRouter();
   const today = todayKey();
   const [completedMeals, setCompletedMeals] = useState(todayCompletedMealIds);
   const [completedDayDates, setCompletedDayDates] = useState(completedDates);
@@ -45,40 +50,35 @@ export function NutritionSummaryCard({ calories, proteinGrams, carbsGrams, fatsG
 
   async function toggleDay() {
     if (mealIds.length === 0 || isSaving) return;
-    const previousMeals = completedMeals;
-    const previousDates = completedDayDates;
     const nextCompleted = !isComplete;
+    if (preview) {
+      setCompletedMeals(nextCompleted ? mealIds : []);
+      setCompletedDayDates(nextCompleted ? [...new Set([...completedDayDates, today])] : completedDayDates.filter((date) => date !== today));
+      return;
+    }
     setIsSaving(true);
     setError(null);
-    setCompletedMeals(nextCompleted ? mealIds : []);
-    setCompletedDayDates(nextCompleted ? [...new Set([...completedDayDates, today])] : completedDayDates.filter((date) => date !== today));
-
-    const responses = await Promise.all(mealIds.map((mealId) => fetch("/api/plans/nutrition/completion", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mealId, completed: nextCompleted, date: today }),
-    })));
+    const changedIds = mealIds.filter((id) => nextCompleted !== completedMeals.includes(id));
+    const { savedIds, failed } = await saveNutritionCompletions(changedIds, nextCompleted, today);
+    const nextMeals = nextCompleted ? [...completedMeals, ...savedIds] : completedMeals.filter((id) => !savedIds.includes(id));
+    setCompletedMeals(nextMeals);
+    setCompletedDayDates(nextMeals.length === mealIds.length ? [...new Set([...completedDayDates, today])] : completedDayDates.filter((date) => date !== today));
     setIsSaving(false);
-    if (responses.some((response) => !response.ok)) {
-      setCompletedMeals(previousMeals);
-      setCompletedDayDates(previousDates);
-      setError("No hemos podido guardar el día. Inténtalo de nuevo.");
-    }
+    if (failed) setError("No hemos podido guardar todas las comidas. Inténtalo de nuevo.");
+    router.refresh();
   }
 
   return (
-    <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6">
-      <Flame className="text-[#72873f]" />
-      <p className="mt-10 text-sm text-[#819078]">Nutrición diaria</p>
-      <h2 className="mt-2 text-2xl font-semibold">{calories} kcal</h2>
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#68736b]"><span><strong className="text-[#18231f]">{Math.round(proteinGrams)}g</strong> proteína</span><span><strong className="text-[#18231f]">{Math.round(carbsGrams)}g</strong> carbos</span><span><strong className="text-[#18231f]">{Math.round(fatsGrams)}g</strong> grasas</span></div>
+    <section className="rounded-[1.5rem] border border-[#e1e7eb] bg-white p-6 shadow-[0_12px_36px_rgba(19,43,57,0.05)] sm:p-7">
+      <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="grid size-11 place-items-center rounded-xl bg-[#fff0ec] text-[#b6503c]"><Apple size={20} aria-hidden="true" /></span><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#657985]">Tu alimentación</p><h2 className="mt-1 text-lg font-semibold">Nutrición diaria</h2></div></div>{!preview && <a href="/dashboard?tab=nutrition" aria-label="Ver nutrición" className="grid size-10 place-items-center rounded-full border border-[#e2e8eb] text-[#b6503c] hover:bg-[#fff1ed] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b6503c]"><ArrowUpRight size={18} aria-hidden="true" /></a>}</div>
+      <div className="mt-7 flex flex-wrap items-end justify-between gap-2"><div><p className="text-xs text-[#526e69]">Referencia diaria</p><p className="mt-1 text-3xl font-semibold tracking-tight">{calories} <span className="text-sm font-medium text-[#526e69]">kcal</span></p></div><div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#526e69]"><span><strong className="text-[#18342f]">{Math.round(proteinGrams)} g</strong> proteína</span><span><strong className="text-[#18342f]">{Math.round(carbsGrams)} g</strong> carbos</span><span><strong className="text-[#18342f]">{Math.round(fatsGrams)} g</strong> grasas</span></div></div>
       {mealIds.length > 0 ? <>
-        <div className="mt-4 flex items-center justify-between text-xs text-[#68736b]"><span>{completedMeals.length} de {mealIds.length} comidas hechas hoy</span><span>{isComplete ? "Día completado" : "Día pendiente"}</span></div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e3e7dd]"><div className="h-full rounded-full bg-[#72873f] transition-all" style={{ width: `${Math.round((completedMeals.length / mealIds.length) * 100)}%` }} /></div>
-        <button type="button" disabled={isSaving} onClick={toggleDay} className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold transition ${isComplete ? "border border-[#72873f] bg-[#e7f5b4] text-[#60703d]" : "bg-[#18231f] text-white"} disabled:opacity-60`}>{isSaving ? <LoaderCircle size={15} className="animate-spin" /> : isComplete ? <Check size={15} /> : null}{isComplete ? "Día completado · Desmarcar" : "Completar día"}</button>
+        <div className="mt-6 flex items-center justify-between text-xs font-semibold text-[#9f4b39]"><span>Comidas de hoy</span><span>{completedMeals.length} de {mealIds.length} · {isComplete ? "Día completado" : "Día pendiente"}</span></div>
+        <div role="progressbar" aria-label="Comidas completadas hoy" aria-valuenow={Math.min(completedMeals.length, mealIds.length)} aria-valuemin={0} aria-valuemax={mealIds.length} className="mt-2 h-2 overflow-hidden rounded-full bg-[#f4eeec]"><div className="h-full rounded-full bg-[#b6503c] motion-safe:transition-[width]" style={{ width: `${Math.min(100, Math.round((completedMeals.length / mealIds.length) * 100))}%` }} /></div>
+        <button type="button" disabled={isSaving} onClick={toggleDay} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full border border-[#ead7d2] bg-white px-4 text-xs font-semibold text-[#9f4b39] hover:bg-[#fff1ed] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b6503c] disabled:opacity-60">{isSaving ? <LoaderCircle size={15} className="animate-spin" /> : isComplete ? <Check size={15} /> : null}{isComplete ? "Día completado · Desmarcar" : "Completar día"}</button>
         {error ? <p className="mt-2 text-xs font-semibold text-[#a64e3c]">{error}</p> : null}
-        <div className="mt-5 border-t border-[#d3dbcf] pt-4"><div className="flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#819078]">Esta semana</p><span className="text-xs font-semibold text-[#60703d]">{completedThisWeek} de 7 días</span></div><div className="mt-3 grid grid-cols-7 gap-1.5">{week.map((date) => { const completed = completedDayDates.includes(date); const isToday = date === today; const label = new Intl.DateTimeFormat("es-ES", { weekday: "short" }).format(new Date(`${date}T12:00:00Z`)).slice(0, 2); return <div key={date} className="text-center"><span className={`mx-auto grid size-7 place-items-center rounded-full text-[10px] font-semibold ${completed ? "bg-[#72873f] text-white" : isToday ? "border-2 border-[#72873f] bg-white text-[#60703d]" : "bg-[#dfe4d8] text-[#819078]"}`}>{completed ? <Check size={13} /> : "·"}</span><span className={`mt-1 block text-[9px] capitalize ${isToday ? "font-bold text-[#60703d]" : "text-[#819078]"}`}>{label}</span></div>; })}</div>{completedThisWeek === 7 ? <div className="mt-4 rounded-xl border border-[#b6c77b] bg-[#e7f5b4] px-3 py-2.5 text-xs font-semibold leading-5 text-[#3d4a24]"><span className="block text-sm">Semana completada</span>Has mantenido tu planificación nutricional durante los 7 días.</div> : null}</div>
-      </> : <p className="mt-4 text-sm text-[#68736b]">Genera tu dieta para empezar a registrar tus comidas.</p>}
+        <div className="mt-5 border-t border-[#edf1f3] pt-4"><div className="flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#526e69]">Esta semana</p><span className="text-xs font-semibold text-[#9f4b39]">{completedThisWeek} de 7 días</span></div><div className="mt-3 grid grid-cols-7 gap-1.5">{week.map((date) => { const completed = completedDayDates.includes(date); const isToday = date === today; const label = new Intl.DateTimeFormat("es-ES", { weekday: "short" }).format(new Date(`${date}T12:00:00Z`)).slice(0, 2); return <div key={date} className="text-center"><span className={`mx-auto grid size-7 place-items-center rounded-full text-[10px] font-semibold ${completed ? "bg-[#b6503c] text-white" : isToday ? "border-2 border-[#b6503c] bg-white text-[#9f4b39]" : "bg-[#f4eeec] text-[#526e69]"}`}>{completed ? <Check size={13} /> : "·"}</span><span className={`mt-1 block text-[9px] capitalize ${isToday ? "font-bold text-[#9f4b39]" : "text-[#526e69]"}`}>{label}</span></div>; })}</div>{completedThisWeek === 7 ? <div className="mt-4 rounded-xl border border-[#ead7d2] bg-[#fff1ed] px-3 py-2.5 text-xs font-semibold leading-5 text-[#9f4b39]"><span className="block text-sm">Semana completada</span>Has mantenido tu planificación nutricional durante los 7 días.</div> : null}</div>
+      </> : <p className="mt-4 text-sm text-[#526e69]">Genera tu dieta para empezar a registrar tus comidas.</p>}
     </section>
   );
 }

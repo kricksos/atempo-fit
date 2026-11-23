@@ -49,6 +49,18 @@ export async function POST(request: Request) {
       ? new Date(currentPeriodEnd * 1000).toISOString()
       : profile?.subscription_renews_at ?? null;
 
+    try {
+      const { data: savedProfile, error: saveError } = await db.from("profiles").update({
+        subscription_auto_renew: !updated.cancel_at_period_end,
+        subscription_renews_at: renewsAt,
+        updated_at: new Date().toISOString(),
+      }).eq("user_id", auth.user.id).select("user_id").maybeSingle();
+      if (saveError || !savedProfile) throw new Error(saveError?.message ?? "Profile not found");
+    } catch (error) {
+      console.error("Unable to sync subscription renewal after Stripe update", error);
+      return NextResponse.json({ error: "Stripe ha aplicado el cambio, pero no se ha podido sincronizar. Comprueba tu suscripción antes de reintentar." }, { status: 502 });
+    }
+
     return NextResponse.json({
       ok: true,
       renewsAt,

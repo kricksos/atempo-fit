@@ -1,0 +1,34 @@
+import assert from "node:assert/strict";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { PremiumPlanCard, SubscriptionSummary, type SubscriptionDetails } from "../src/components/premium-plan-card";
+import { hasPaidAccess, normalizeSubscriptionPlan, normalizeSubscriptionStatus, subscriptionStatusLabel } from "../src/features/subscription/plans";
+
+const now = Date.parse("2026-01-01T00:00:00Z");
+const details: SubscriptionDetails = { plan: "free", status: "pending", autoRenew: false, startedAt: null, renewsAt: null, email: "example@example.test" };
+const renderSummary = (value: SubscriptionDetails) => renderToStaticMarkup(<SubscriptionSummary details={value} now={now} onOpen={() => {}} />);
+const free = renderSummary(details);
+assert.match(free, /Plan Free/);
+assert.match(free, /Ver planes de pago/);
+assert.match(free, /39 €/);
+const active = { ...details, plan: "monthly" as const, status: "active" as const, autoRenew: true, renewsAt: "2026-02-01T00:00:00Z" };
+assert.match(renderSummary(active), /Gestionar suscripción/);
+const cancelled = { ...active, status: "cancelled" as const, autoRenew: false };
+assert.equal(hasPaidAccess(cancelled.plan, cancelled.status, cancelled.renewsAt, now), true);
+assert.equal(subscriptionStatusLabel(cancelled.plan, cancelled.status, cancelled.autoRenew, true), "Sin renovación");
+assert.match(renderSummary(cancelled), /Acceso hasta/);
+assert.equal(hasPaidAccess(cancelled.plan, cancelled.status, cancelled.renewsAt, Date.parse("2026-02-01T00:00:00Z")), false);
+assert.match(renderSummary({ ...active, status: "paused" }), /Pausado/);
+assert.doesNotMatch(renderSummary({ ...active, status: "paused" }), /Gestionar suscripción/);
+assert.equal(normalizeSubscriptionPlan("starter"), "monthly");
+assert.equal(normalizeSubscriptionPlan("pro"), "quarterly");
+assert.equal(normalizeSubscriptionPlan("elite"), "annual");
+assert.throws(() => normalizeSubscriptionStatus("unknown"));
+const management = renderToStaticMarkup(<PremiumPlanCard details={active} now={now} onChange={() => {}} />);
+assert.match(management, /Cancelar renovación/);
+assert.doesNotMatch(management, /Confirmar cancelación/);
+const noRenewal = renderToStaticMarkup(<PremiumPlanCard details={cancelled} now={now} onChange={() => {}} />);
+assert.match(noRenewal, /Reactivar renovación/);
+assert.doesNotMatch(noRenewal, /Confirmar reactivación/);
+console.log("Perfil: estados y gestión de suscripción comprobados.");

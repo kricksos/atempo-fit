@@ -1,13 +1,26 @@
 "use client";
 
-import { ChefHat, Check, ChevronDown, LoaderCircle, MapPin, RefreshCw, ShoppingBasket } from "lucide-react";
+import { Apple, ChefHat, Check, CheckCircle2, ChevronDown, Clock3, LoaderCircle, MapPin, RefreshCw, RotateCcw, ShoppingBasket, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+import { NutritionAssistantDialog } from "@/components/nutrition-assistant-dialog";
+import { saveNutritionCompletions } from "@/features/planning/nutrition-completion-client";
 
 type NutritionItem = { id: string; name: string; quantityGrams: number; role: string; alternativeGroup: string | null; selectedFoodName?: string; selectedQuantityGrams?: number };
 type NutritionMeal = { id: string; name: string; suggestedTime: string | null; targetCalories: number; items: NutritionItem[] };
-type NutritionPlanProps = { meals: NutritionMeal[]; alternatives: Record<string, string[]>; foodIds: Record<string, string>; mealCount: number; todayCompletedMealIds: string[]; completedDates: string[]; mealsOutSlots?: string[] };
+type NutritionPlanProps = {
+  meals: NutritionMeal[];
+  alternatives: Record<string, string[]>;
+  foodIds: Record<string, string>;
+  mealCount: number;
+  todayCompletedMealIds: string[];
+  completedDates: string[];
+  reference?: { calories: number; proteinGrams: number; carbsGrams: number; fatsGrams: number };
+  mealsOutSlots?: string[];
+  readOnly?: boolean;
+};
 
 const mealOutOptions = [
   { id: "breakfast", label: "Desayuno" },
@@ -18,17 +31,9 @@ const mealOutOptions = [
 ] as const;
 
 const ratios: Record<string, number> = {
-  "Arroz cocido": 1,
-  "Pasta cocida": 0.98,
-  "Patata cocida": 1.45,
-  "Pechuga de pollo": 1,
-  Pavo: 1.12,
-  "Tofu firme": 1.35,
-  Huevos: 0.85,
-  Brocoli: 1,
-  Espinaca: 1.2,
-  "Aceite de oliva": 1,
-  Aguacate: 5,
+  "Arroz cocido": 1, "Pasta cocida": 0.98, "Patata cocida": 1.45,
+  "Pechuga de pollo": 1, Pavo: 1.12, "Tofu firme": 1.35, Huevos: 0.85,
+  Brocoli: 1, Espinaca: 1.2, "Aceite de oliva": 1, Aguacate: 5,
 };
 
 const foodTypeStyles: Record<string, { label: string; className: string }> = {
@@ -40,64 +45,34 @@ const foodTypeStyles: Record<string, { label: string; className: string }> = {
   fruit: { label: "Fruta", className: "border-[#efb1aa] bg-[#fff1ef] text-[#b84f49]" },
 };
 
-function foodTypeStyle(role: string) {
-  return foodTypeStyles[role] ?? { label: role, className: "border-[#d3dbcf] bg-[#f8f7f1] text-[#68736b]" };
-}
+const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b6503c]";
 
 function equivalentQuantity(item: NutritionItem, selectedFood?: string) {
   if (!selectedFood || !item.alternativeGroup) return item.quantityGrams;
-  const baseRatio = ratios[item.name] ?? 1;
-  return Math.max(1, Math.round(item.quantityGrams * (ratios[selectedFood] ?? 1) / baseRatio));
-}
-
-function currentWeekDates() {
-  const currentDate = new Date();
-  const dayOfWeek = currentDate.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday = new Date(currentDate);
-  monday.setDate(currentDate.getDate() + mondayOffset);
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
-    return date.toISOString().slice(0, 10);
-  });
-}
-
-function mondayKey(dateString: string) {
-  const date = new Date(`${dateString}T12:00:00`);
-  const dayOfWeek = date.getDay();
-  date.setDate(date.getDate() + (dayOfWeek === 0 ? -6 : 1 - dayOfWeek));
-  return date.toISOString().slice(0, 10);
+  return Math.max(1, Math.round(item.quantityGrams * (ratios[selectedFood] ?? 1) / (ratios[item.name] ?? 1)));
 }
 
 function dayStreaks(dates: string[]) {
-  const uniqueSorted = [...new Set(dates)].sort();
-  if (uniqueSorted.length === 0) return { current: 0, best: 0 };
-
+  const sorted = [...new Set(dates)].sort();
+  if (!sorted.length) return { current: 0, best: 0 };
   let best = 1;
   let run = 1;
-  for (let index = 1; index < uniqueSorted.length; index++) {
-    const previousDate = new Date(`${uniqueSorted[index - 1]}T00:00:00Z`);
-    const currentDate = new Date(`${uniqueSorted[index]}T00:00:00Z`);
-    const diffDays = Math.round((currentDate.getTime() - previousDate.getTime()) / 86400000);
-    run = diffDays === 1 ? run + 1 : 1;
+  for (let index = 1; index < sorted.length; index++) {
+    const diff = (new Date(`${sorted[index]}T00:00:00Z`).getTime() - new Date(`${sorted[index - 1]}T00:00:00Z`).getTime()) / 86400000;
+    run = diff === 1 ? run + 1 : 1;
     best = Math.max(best, run);
   }
-
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const lastDate = uniqueSorted[uniqueSorted.length - 1];
   let current = 0;
-  if (lastDate === today || lastDate === yesterday) {
+  if (sorted[sorted.length - 1] === today || sorted[sorted.length - 1] === yesterday) {
     current = 1;
-    for (let index = uniqueSorted.length - 1; index > 0; index--) {
-      const previousDate = new Date(`${uniqueSorted[index - 1]}T00:00:00Z`);
-      const currentDate = new Date(`${uniqueSorted[index]}T00:00:00Z`);
-      if (Math.round((currentDate.getTime() - previousDate.getTime()) / 86400000) === 1) current += 1;
-      else break;
+    for (let index = sorted.length - 1; index > 0; index--) {
+      const diff = (new Date(`${sorted[index]}T00:00:00Z`).getTime() - new Date(`${sorted[index - 1]}T00:00:00Z`).getTime()) / 86400000;
+      if (diff !== 1) break;
+      current++;
     }
   }
-
   return { current, best };
 }
 
@@ -106,7 +81,8 @@ function preparationForMeal(meal: NutritionMeal) {
   const protein = meal.items.find((item) => item.role === "protein" || item.role === "dairy")?.name;
   const carbohydrate = meal.items.find((item) => item.role === "carbohydrate")?.name;
   const vegetable = meal.items.find((item) => item.role === "vegetable")?.name;
-  return [protein && `Prepara ${protein}`, carbohydrate && `acompaña con ${carbohydrate}`, vegetable && `y añade ${vegetable}`].filter(Boolean).join(". ") + ".";
+  const parts = [protein && `Prepara ${protein}`, carbohydrate && `acompaña con ${carbohydrate}`, vegetable && `y añade ${vegetable}`].filter(Boolean);
+  return parts.length ? `${parts.join(", ")}.` : "";
 }
 
 function weeklyShoppingList(meals: NutritionMeal[]) {
@@ -115,161 +91,215 @@ function weeklyShoppingList(meals: NutritionMeal[]) {
     const existing = totals.get(item.name);
     totals.set(item.name, { grams: (existing?.grams ?? 0) + item.quantityGrams * 7, role: item.role });
   }
-  return [...totals.entries()].map(([name, details]) => ({ name, ...details })).sort((left, right) => left.role.localeCompare(right.role) || left.name.localeCompare(right.name));
+  return [...totals.entries()].map(([name, details]) => ({ name, ...details })).sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
 }
 
-function slotForMeal(meal: NutritionMeal) {
-  const hour = Number(meal.suggestedTime?.slice(0, 2));
-  if (hour < 10) return "breakfast";
-  if (hour < 13) return "mid_morning";
-  if (hour < 16) return "lunch";
-  if (hour < 19) return "afternoon_snack";
-  return "dinner";
-}
-
-function outsideName(meal: NutritionMeal, isOutside: boolean) {
-  if (!isOutside || meal.name.includes("fuera de casa")) return meal.name;
-  return `${meal.name} fuera de casa`;
-}
-
-export function NutritionPlan({ meals, alternatives, foodIds, mealCount, todayCompletedMealIds, completedDates, mealsOutSlots = [] }: NutritionPlanProps) {
+export function NutritionPlan({ meals, alternatives, foodIds, mealCount, todayCompletedMealIds, completedDates, reference, mealsOutSlots = [], readOnly = false }: NutritionPlanProps) {
   const router = useRouter();
-  const [openMeal, setOpenMeal] = useState<string | null>(null);
-  const [completedMeals, setCompletedMeals] = useState<string[]>(todayCompletedMealIds);
+  const assistantTriggerRef = useRef<HTMLButtonElement>(null);
+  const [assistantMealId, setAssistantMealId] = useState<string | null>(null);
+  const [openMeal, setOpenMeal] = useState<string | null>(meals[0]?.id ?? null);
+  const [completedMeals, setCompletedMeals] = useState(() => todayCompletedMealIds.filter((id) => meals.some((meal) => meal.id === id)));
   const [selectedAlternatives, setSelectedAlternatives] = useState<Record<string, string>>(() => Object.fromEntries(meals.flatMap((meal) => meal.items.filter((item) => item.alternativeGroup && item.selectedFoodName).map((item) => [`${meal.id}:${item.alternativeGroup}`, item.selectedFoodName as string]))));
   const [openAlternative, setOpenAlternative] = useState<string | null>(null);
-  const [shoppingOpen, setShoppingOpen] = useState(false);
-  const [mealsOutOpen, setMealsOutOpen] = useState(false);
-  const [selectedMealsOutSlots, setSelectedMealsOutSlots] = useState<string[]>(mealsOutSlots);
+  const [openTool, setOpenTool] = useState<"settings" | "outside" | "shopping" | null>(null);
+  const [selectedMealsOutSlots, setSelectedMealsOutSlots] = useState(mealsOutSlots);
   const [savingMealsOut, setSavingMealsOut] = useState(false);
   const [mealsOutError, setMealsOutError] = useState<string | null>(null);
+  const [mealsOutNeedsRegeneration, setMealsOutNeedsRegeneration] = useState(false);
   const [isChangingMealCount, setIsChangingMealCount] = useState(false);
-  const [weekDates] = useState<string[]>(currentWeekDates);
-  const [completedDayDates, setCompletedDayDates] = useState<string[]>(completedDates);
+  const [mealCountError, setMealCountError] = useState<string | null>(null);
+  const [savingAlternative, setSavingAlternative] = useState(false);
+  const [alternativeError, setAlternativeError] = useState<string | null>(null);
+  const [savingCompletion, setSavingCompletion] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [completedDayDates, setCompletedDayDates] = useState(completedDates);
+  const today = new Date().toISOString().slice(0, 10);
 
   async function changeMealCount(nextMealCount: number) {
     setIsChangingMealCount(true);
-    const response = await fetch("/api/plans/nutrition/regenerate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mealCount: nextMealCount }),
-    });
-    if (response.ok) router.refresh();
-    setIsChangingMealCount(false);
+    setMealCountError(null);
+    try {
+      const response = await fetch("/api/plans/nutrition/regenerate", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mealCount: nextMealCount }),
+      });
+      if (!response.ok) throw new Error("No hemos podido actualizar el número de comidas.");
+      router.refresh();
+    } catch (error) {
+      setMealCountError(error instanceof Error ? error.message : "No hemos podido actualizar el número de comidas.");
+    } finally {
+      setIsChangingMealCount(false);
+    }
   }
 
   async function toggleMealOutSlot(slot: string) {
-    const nextSlots = selectedMealsOutSlots.includes(slot)
-      ? selectedMealsOutSlots.filter((currentSlot) => currentSlot !== slot)
-      : [...selectedMealsOutSlots, slot];
+    const previousSlots = selectedMealsOutSlots;
+    const nextSlots = previousSlots.includes(slot) ? previousSlots.filter((value) => value !== slot) : [...previousSlots, slot];
     setSelectedMealsOutSlots(nextSlots);
     setSavingMealsOut(true);
     setMealsOutError(null);
-    const response = await fetch("/api/profile/meals-out", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slots: nextSlots }),
-    });
-    if (!response.ok) {
+    setMealsOutNeedsRegeneration(false);
+    let preferenceSaved = false;
+    try {
+      const response = await fetch("/api/profile/meals-out", {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slots: nextSlots }),
+      });
+      if (!response.ok) throw new Error("No hemos podido guardar tus comidas fuera de casa.");
+      preferenceSaved = true;
+      const regenerated = await fetch("/api/plans/nutrition/regenerate", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preserveFoods: true }),
+      });
+      if (!regenerated.ok) throw new Error("No se ha podido recalcular la dieta.");
+      router.refresh();
+    } catch (error) {
+      if (!preferenceSaved) setSelectedMealsOutSlots(previousSlots);
+      setMealsOutNeedsRegeneration(preferenceSaved);
+      setMealsOutError(preferenceSaved ? "Hemos guardado la preferencia, pero no hemos podido recalcular tu dieta. Inténtalo de nuevo." : error instanceof Error ? error.message : "No hemos podido guardar tus comidas fuera de casa.");
+      router.refresh();
+    } finally {
       setSavingMealsOut(false);
-      setSelectedMealsOutSlots(mealsOutSlots);
-      setMealsOutError("No hemos podido guardar tus comidas fuera de casa.");
-      return;
-    }
-
-    const regenerationResponse = await fetch("/api/plans/nutrition/regenerate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preserveFoods: true }),
-    });
-    setSavingMealsOut(false);
-    if (regenerationResponse.ok) router.refresh();
-    else {
-      setSelectedMealsOutSlots(mealsOutSlots);
-      setMealsOutError("Hemos guardado la preferencia, pero no hemos podido recalcular tu dieta. Inténtalo de nuevo.");
     }
   }
 
-  async function selectAlternative(mealId: string, group: string, food: string, mealItems: NutritionItem[]) {
-    setSelectedAlternatives((current) => ({ ...current, [`${mealId}:${group}`]: food }));
-    const item = mealItems.find((mealItem) => mealItem.alternativeGroup === group);
+  async function retryMealsOutRegeneration() {
+    setSavingMealsOut(true);
+    setMealsOutError(null);
+    try {
+      const response = await fetch("/api/plans/nutrition/regenerate", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preserveFoods: true }),
+      });
+      if (!response.ok) throw new Error("No hemos podido recalcular tu dieta. Inténtalo de nuevo.");
+      setMealsOutNeedsRegeneration(false);
+      router.refresh();
+    } catch {
+      setMealsOutError("No hemos podido recalcular tu dieta. Inténtalo de nuevo.");
+    } finally {
+      setSavingMealsOut(false);
+    }
+  }
+
+  async function selectAlternative(mealId: string, item: NutritionItem, food: string) {
+    const group = item.alternativeGroup;
     const selectedFoodId = foodIds[food];
-    if (!item || !selectedFoodId) return;
-    await fetch("/api/plans/nutrition/substitution", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mealItemId: item.id, selectedFoodId, quantityGrams: equivalentQuantity(item, food) }) });
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  async function setDayCompletion(completed: boolean) {
-    const previousMeals = completedMeals;
-    const nextMeals = completed ? meals.map((meal) => meal.id) : [];
-    if (previousMeals.length === nextMeals.length) return;
-
-    setCompletedMeals(nextMeals);
-    const responses = await Promise.all(meals.map((meal) => fetch("/api/plans/nutrition/completion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mealId: meal.id, completed, date: today }) })));
-    if (responses.some((response) => !response.ok)) {
-      setCompletedMeals(previousMeals);
-      setCompletionError("No hemos podido guardar el día. Revisa la conexión e inténtalo de nuevo.");
+    if (!group || !selectedFoodId) {
+      setAlternativeError("No hemos encontrado este alimento. Actualiza la página e inténtalo de nuevo.");
       return;
     }
+    setSavingAlternative(true);
+    setAlternativeError(null);
+    try {
+      const response = await fetch("/api/plans/nutrition/substitution", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mealItemId: item.id, selectedFoodId, quantityGrams: equivalentQuantity(item, food) }),
+      });
+      if (!response.ok) throw new Error("No hemos podido guardar el cambio de alimento.");
+      setSelectedAlternatives((current) => ({ ...current, [`${mealId}:${group}`]: food }));
+      router.refresh();
+    } catch (error) {
+      setAlternativeError(error instanceof Error ? error.message : "No hemos podido guardar el cambio de alimento.");
+      router.refresh();
+    } finally {
+      setSavingAlternative(false);
+    }
+  }
 
+  async function setCompletion(ids: string[], completed: boolean) {
+    if (savingCompletion || readOnly) return;
+    const changedIds = ids.filter((id) => completed !== completedMeals.includes(id));
+    if (!changedIds.length) return;
+    setSavingCompletion(true);
     setCompletionError(null);
-    if (completed && !completedDayDates.includes(today)) setCompletedDayDates((current) => [...current, today]);
-    if (!completed && completedDayDates.includes(today)) setCompletedDayDates((current) => current.filter((date) => date !== today));
+    const { savedIds, failed } = await saveNutritionCompletions(changedIds, completed, today);
+    const nextMeals = completed ? [...completedMeals, ...savedIds] : completedMeals.filter((id) => !savedIds.includes(id));
+    setCompletedMeals(nextMeals);
+    setCompletedDayDates((current) => nextMeals.length === meals.length ? [...new Set([...current, today])] : current.filter((date) => date !== today));
+    if (failed) setCompletionError("No hemos podido guardar todas las comidas. Revisa la conexión e inténtalo de nuevo.");
+    setSavingCompletion(false);
+    router.refresh();
   }
 
-  if (meals.length === 0) return <p className="mt-4 text-sm text-[#68736b]">El detalle de comidas estará disponible al regenerar tu plan.</p>;
-
-  const weekDayCounts = new Map<string, number>();
-  for (const date of completedDayDates) {
-    const key = mondayKey(date);
-    weekDayCounts.set(key, (weekDayCounts.get(key) ?? 0) + 1);
+  function displayedItem(meal: NutritionMeal, item: NutritionItem) {
+    const selected = item.alternativeGroup ? selectedAlternatives[`${meal.id}:${item.alternativeGroup}`] : undefined;
+    return {
+      ...item,
+      name: selected ?? item.name,
+      quantityGrams: selected && selected === item.selectedFoodName ? item.selectedQuantityGrams ?? item.quantityGrams : equivalentQuantity(item, selected),
+    };
   }
+
+  if (!meals.length) return <p className="mt-4 text-sm text-[#526e69]">El detalle de comidas estará disponible al regenerar tu plan.</p>;
+
   const dayCompleted = completedMeals.length === meals.length;
-  const nutritionStreak = dayStreaks(completedDayDates);
-  const streakWeeks = Math.floor(nutritionStreak.current / 7);
-  const streakMonths = Math.floor(nutritionStreak.current / 30);
-  const streakYears = Math.floor(nutritionStreak.current / 365);
+  const streak = dayStreaks(completedDayDates);
+  const streakWeeks = Math.floor(streak.current / 7);
+  const streakMonths = Math.floor(streak.current / 30);
+  const streakYears = Math.floor(streak.current / 365);
   const milestoneMessage = streakYears > 0 ? `${streakYears} ${streakYears === 1 ? "año" : "años"} de racha nutricional.` : streakMonths > 0 ? `${streakMonths} ${streakMonths === 1 ? "mes" : "meses"} de racha nutricional.` : streakWeeks > 0 ? `${streakWeeks} ${streakWeeks === 1 ? "semana" : "semanas"} de racha nutricional.` : null;
-  const shoppingList = weeklyShoppingList(meals);
+  const shoppingList = weeklyShoppingList(meals.map((meal) => ({ ...meal, items: meal.items.map((item) => displayedItem(meal, item)) })));
+  const activeAssistantMeal = meals.find((meal) => meal.id === assistantMealId);
 
-  return (
-    <section className="mt-10 rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-5 sm:p-7">
-      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-        <div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#819078]">Tu día de alimentación</p><h2 className="mt-2 text-3xl font-semibold tracking-[-0.05em]">Claro, flexible y preciso.</h2></div>
-        <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#819078]">Comidas al día</p><div className="flex flex-wrap gap-2">{[3, 4, 5, 6].map((option) => <button key={option} type="button" disabled={isChangingMealCount || option === mealCount} onClick={() => changeMealCount(option)} className={`inline-flex min-w-12 items-center justify-center rounded-full border px-3 py-2 text-sm font-semibold ${option === mealCount ? "border-[#72873f] bg-[#e7f5b4] text-[#60703d]" : "border-[#cfd7c8] text-[#68736b] hover:border-[#72873f]"}`}>{isChangingMealCount && option !== mealCount ? <LoaderCircle size={15} className="animate-spin" /> : option}</button>)}</div></div>
-      </div>
-      <p className="mt-3 text-sm text-[#68736b]">Pesos en gramos, indicados como cocinados o servidos. El modo preciso es el estándar de Atempo Fit.</p>
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d3dbcf] bg-white/60 p-4"><div><p className="text-sm font-semibold">Gestiona tu alimentación</p><p className="mt-1 text-xs text-[#68736b]">Consulta la dieta activa y revisa las versiones que has tenido.</p></div><Link href="/nutrition/builder" className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-4 py-2 text-xs font-semibold text-white"><ChefHat size={15} /> Gestionar dietas</Link></div>
-      <div className="mt-5 rounded-2xl border border-[#d3dbcf] bg-white/50 p-4">
-        <button type="button" onClick={() => setMealsOutOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={mealsOutOpen}>
-          <span className="flex items-center gap-3"><MapPin className="text-[#72873f]" size={18} /><span><span className="block text-sm font-semibold">Comidas fuera de casa</span><span className="block text-xs text-[#819078]">¿Trabajas, estudias o te desplazas? Marca las comidas que te cuesta hacer en casa y recibirás una guía más fácil para resolverlas fuera.</span></span></span>
-          <ChevronDown size={18} className={`text-[#60703d] transition-transform ${mealsOutOpen ? "rotate-180" : ""}`} />
-        </button>
-        {mealsOutOpen && <div className="mt-4 flex flex-wrap gap-2">{mealOutOptions.map((option) => <button key={option.id} type="button" disabled={savingMealsOut} onClick={() => toggleMealOutSlot(option.id)} className={`rounded-full border px-3 py-2 text-xs font-semibold ${selectedMealsOutSlots.includes(option.id) ? "border-[#72873f] bg-[#e7f5b4] text-[#60703d]" : "border-[#cfd7c8] text-[#68736b]"}`}>{option.label}</button>)}{savingMealsOut && <LoaderCircle size={16} className="my-2 animate-spin text-[#60703d]" />}{mealsOutError && <p className="basis-full text-xs font-semibold text-[#a64e3c]">{mealsOutError}</p>}</div>}
-      </div>
-      <div className="mt-6 flex items-center justify-between text-sm text-[#68736b]"><span>{dayCompleted ? "Día completado" : "Día pendiente"}</span><span>Modo preciso</span></div>
-      {completionError && <p className="mt-3 text-sm font-medium text-[#a64e3c]">{completionError}</p>}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#e7f5b4] p-4 text-sm font-semibold text-[#60703d]"><span className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-full bg-[#72873f] text-white"><Check size={16} /></span>{dayCompleted ? "Día completado. Has cumplido tu planificación de hoy." : "¿Has seguido el plan de hoy? Márcalo de una vez."}</span><button type="button" onClick={() => setDayCompletion(!dayCompleted)} className="rounded-full bg-[#18231f] px-4 py-2 text-xs font-semibold text-[#f6f4ed]">{dayCompleted ? "Desmarcar día" : "Completar día"}</button></div>
-      {milestoneMessage && <div className="mt-4 rounded-2xl border border-[#b6c77b] bg-white/60 p-4 text-sm font-semibold text-[#60703d]">{milestoneMessage}</div>}
-      <section className="mt-6 border-y border-[#d3dbcf] py-4">
-        <button type="button" onClick={() => setShoppingOpen((current) => !current)} className="flex w-full items-center justify-between text-left" aria-expanded={shoppingOpen}>
-          <span className="flex items-center gap-3"><ShoppingBasket className="text-[#72873f]" size={20} /><span><span className="block text-sm font-semibold">Compra para 7 días</span><span className="block text-xs text-[#819078]">Lista secundaria con cantidades orientativas.</span></span></span>
-          <ChevronDown size={18} className={`text-[#60703d] transition-transform ${shoppingOpen ? "rotate-180" : ""}`} />
-        </button>
-        {shoppingOpen && <div className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">{shoppingList.map((item) => <div key={item.name} className="flex items-center justify-between border-b border-[#e3e7dd] py-2 text-sm"><span>{item.name}</span><span className="font-semibold text-[#60703d]">{Math.round(item.grams)} g</span></div>)}</div>}
+  return <section>
+    <div className="relative overflow-hidden rounded-[1.75rem] bg-[#173b44] p-5 text-white sm:p-6">
+      <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-32 size-80 rounded-full border border-white/10 shadow-[0_0_0_3rem_rgba(255,255,255,0.025),0_0_0_6rem_rgba(255,255,255,0.02)]" />
+      <div className="relative flex flex-wrap items-start justify-between gap-5"><div><p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#f3b8a7]"><Apple size={15} aria-hidden="true" /> Tu alimentación</p><h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] sm:text-4xl">Tu día, a tu manera.</h2><p className="mt-3 max-w-lg text-sm leading-6 text-[#c5d9d9]">Consulta tus comidas, adapta los alimentos disponibles y sigue tu plan a tu ritmo.</p></div><div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm"><span className="block text-xs text-[#c5d9d9]">Comidas registradas</span><strong className="mt-1 block text-2xl">{completedMeals.length} <span className="text-sm font-normal text-[#c5d9d9]">de {meals.length}</span></strong></div></div>
+      <div role="progressbar" aria-label="Comidas marcadas hoy" aria-valuemin={0} aria-valuemax={meals.length} aria-valuenow={completedMeals.length} className="relative mt-4 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-[#f3b8a7] motion-safe:transition-[width]" style={{ width: `${completedMeals.length / meals.length * 100}%` }} /></div>
+      <div className="relative mt-3 flex flex-wrap items-center justify-between gap-3"><p aria-live="polite" className="text-sm text-[#d0e3e1]">{dayCompleted ? "Has marcado todas las comidas de hoy." : completedMeals.length ? "Puedes marcar cada comida o el día completo." : "Empieza consultando tus comidas de hoy."}</p><button type="button" disabled={readOnly || savingCompletion} onClick={() => void setCompletion(meals.map((meal) => meal.id), !dayCompleted)} className={`inline-flex min-h-11 items-center gap-2 rounded-full bg-[#f5c2b4] px-4 text-sm font-bold text-[#502e27] hover:bg-[#ffe0d8] disabled:opacity-50 ${focus}`}>{savingCompletion ? <LoaderCircle size={16} className="animate-spin" /> : dayCompleted ? <RotateCcw size={16} /> : <Check size={16} />}{dayCompleted ? "Desmarcar día" : "Completar día"}</button></div>
+      {completionError && <p role="alert" className="relative mt-3 text-sm font-semibold text-[#ffe0d8]">{completionError}</p>}
+    </div>
+
+    <div className="mt-7 grid items-start gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,0.8fr)]">
+      <section aria-labelledby="nutrition-meals-title">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#b6503c]">Tu plan de hoy</p><h2 id="nutrition-meals-title" className="mt-2 text-2xl font-semibold tracking-tight">Tus comidas</h2></div><span className="text-xs text-[#71858c]">Horarios orientativos · {meals.length} comidas</span></div>
+        <div className="space-y-3">{meals.map((meal) => {
+          const isOpen = openMeal === meal.id;
+          const done = completedMeals.includes(meal.id);
+          const isOutside = meal.name.toLowerCase().includes("fuera de casa");
+          const displayedName = meal.name;
+          const displayedMeal = { ...meal, name: displayedName, items: meal.items.map((item) => displayedItem(meal, item)) };
+          const preparation = preparationForMeal(displayedMeal);
+          return <article key={meal.id} className={`overflow-hidden rounded-[1.4rem] border bg-white shadow-[0_8px_24px_rgba(20,54,57,0.04)] ${done ? "border-[#b8dfd1]" : "border-[#e1e7eb]"}`}>
+            <div className="flex items-center gap-2 p-3 sm:p-4">
+              <button type="button" onClick={() => setOpenMeal(isOpen ? null : meal.id)} aria-expanded={isOpen} aria-controls={`nutrition-meal-${meal.id}`} className={`flex min-h-12 min-w-0 flex-1 items-center gap-3 rounded-xl text-left ${focus}`}>
+                <span className={`grid size-11 shrink-0 place-items-center rounded-2xl ${done ? "bg-[#e2f4eb] text-[#34785f]" : "bg-[#fff1ed] text-[#b6503c]"}`}>{done ? <CheckCircle2 size={20} aria-hidden="true" /> : <ChefHat size={20} aria-hidden="true" />}</span>
+                <span className="min-w-0 flex-1"><span className="block text-base font-bold">{displayedName}{isOutside && <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-[#9f4b39]"><MapPin size={12} aria-hidden="true" /> Fuera</span>}</span><span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6b8086]"><Clock3 size={13} aria-hidden="true" /> {meal.suggestedTime ? meal.suggestedTime.slice(0, 5) : "Flexible"} · {meal.targetCalories} kcal {done && <span className="font-semibold text-[#34785f]">· Marcada</span>}</span></span>
+                <ChevronDown size={18} aria-hidden="true" className={`shrink-0 text-[#8b9b9f] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              </button>
+              <button type="button" aria-label={`${done ? "Desmarcar" : "Marcar"} ${meal.name}`} aria-pressed={done} disabled={readOnly || savingCompletion} onClick={() => void setCompletion([meal.id], !done)} className={`grid size-11 shrink-0 place-items-center rounded-full border disabled:opacity-50 ${done ? "border-[#34785f] bg-[#34785f] text-white" : "border-[#d7e3e3] text-[#71888d] hover:border-[#34785f]"} ${focus}`}><Check size={19} aria-hidden="true" /></button>
+            </div>
+            <div id={`nutrition-meal-${meal.id}`} hidden={!isOpen} className="border-t border-[#edf1f2] px-4 pb-5 pt-4 sm:px-5">
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#748b90]">Alimentos del plan</p>
+              <div className="mt-3 space-y-2">{meal.items.map((item) => {
+                const displayed = displayedItem(meal, item);
+                const style = foodTypeStyles[item.role] ?? { label: item.role, className: "border-[#d8e6d9] bg-[#f5faf4] text-[#526e69]" };
+                const alternativeKey = `${meal.id}:${item.id}`;
+                const options = item.alternativeGroup ? alternatives[item.alternativeGroup] ?? [] : [];
+                const alternativesOpen = openAlternative === alternativeKey;
+                return <div key={item.id} className={`rounded-xl border px-4 py-3 ${style.className}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-[#18342f]">{displayed.name}</p><span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold">{style.label}</span></div><p className="mt-1 text-xs opacity-75">{displayed.quantityGrams} g · cocinado o servido</p></div>{options.length > 0 && <button type="button" onClick={() => setOpenAlternative(alternativesOpen ? null : alternativeKey)} aria-expanded={alternativesOpen} className={`inline-flex items-center gap-1.5 rounded-xl border border-white/80 bg-white/70 px-3 py-2 text-xs font-semibold text-[#9f4b39] ${focus}`}><RefreshCw size={13} aria-hidden="true" /> {alternativesOpen ? "Cerrar" : "Cambiar alimento"}</button>}</div>
+                  {alternativesOpen && <div className="mt-3 border-t border-white/60 pt-3"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9f4b39]">Alternativas equivalentes</p><div className="mt-2 flex flex-wrap gap-2">{options.map((food) => <button key={food} type="button" disabled={readOnly || savingAlternative} aria-pressed={displayed.name === food} onClick={() => void selectAlternative(meal.id, item, food)} className={`rounded-full border px-3 py-2 text-xs font-medium disabled:opacity-50 ${displayed.name === food ? "border-[#b6503c] bg-[#fff1ed] text-[#9f4b39]" : "border-white/70 bg-white/60 text-[#526e69] hover:border-[#b6503c]"} ${focus}`}>{food}</button>)}</div><p className="mt-2 text-xs text-[#526e69]">Puedes probar varias opciones; la cantidad se recalcula para mantener la equivalencia.</p></div>}
+                </div>;
+              })}</div>
+              {alternativeError && <p role="alert" className="mt-3 text-sm font-semibold text-[#a64e3c]">{alternativeError}</p>}
+              {preparation && <div className="mt-4 flex gap-2 border-l-2 border-[#ead7d2] pl-3 text-sm text-[#526e69]"><ChefHat className="shrink-0 text-[#b6503c]" size={17} aria-hidden="true" /><p>{preparation}</p></div>}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#f1d8d0] bg-[#fff7f4] p-4"><div><p className="text-sm font-bold text-[#8c4436]">¿Ideas para prepararla?</p><p className="mt-1 text-xs leading-5 text-[#8c6b62]">Consulta al asistente con los alimentos de esta comida.</p></div><button type="button" disabled={readOnly || savingAlternative || !meal.items.length} onClick={(event) => { assistantTriggerRef.current = event.currentTarget; setAssistantMealId(meal.id); }} className={`inline-flex min-h-11 items-center gap-2 rounded-full border border-[#e4d7d2] bg-white px-4 text-sm font-semibold text-[#9f4b39] hover:bg-[#fff1ed] disabled:opacity-50 ${focus}`}><Sparkles size={16} aria-hidden="true" /> Preguntar al asistente</button></div>
+            </div>
+          </article>;
+        })}</div>
+        <p className="mt-3 text-xs leading-5 text-[#71858c]">Pesos en gramos, indicados como cocinados o servidos. El modo preciso es el estándar de Atempo Fit.</p>
       </section>
-      {weekDates.length > 0 && <div className="mt-6 rounded-2xl border border-[#d3dbcf] bg-white/50 p-4"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#819078]">Constancia por días</p><p className="mt-1 text-sm text-[#68736b]">Racha actual: {nutritionStreak.current} {nutritionStreak.current === 1 ? "día" : "días"} · mejor: {nutritionStreak.best}</p></div><span className="text-sm font-semibold text-[#60703d]">{weekDates.filter((date) => completedDayDates.includes(date)).length} de 7</span></div><div className="mt-4 grid grid-cols-7 gap-2">{weekDates.map((date) => { const completed = completedDayDates.includes(date); const dayLabel = new Intl.DateTimeFormat("es-ES", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).slice(0, 2); return <div key={date} className="text-center"><span className={`mx-auto grid size-8 place-items-center rounded-full text-xs font-semibold ${completed ? "bg-[#72873f] text-white" : "bg-[#dfe4d8] text-[#819078]"}`}>{completed ? "✓" : "·"}</span><span className="mt-2 block text-[10px] capitalize text-[#819078]">{dayLabel}</span></div>; })}</div><div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs"><div className="rounded-xl bg-[#f4f1e9] p-3"><p className="font-semibold text-[#18231f]">{nutritionStreak.current}</p><p className="mt-1 text-[#819078]">días</p></div><div className="rounded-xl bg-[#f4f1e9] p-3"><p className="font-semibold text-[#18231f]">{streakWeeks}</p><p className="mt-1 text-[#819078]">semanas</p></div><div className="rounded-xl bg-[#f4f1e9] p-3"><p className="font-semibold text-[#18231f]">{streakMonths}</p><p className="mt-1 text-[#819078]">meses</p></div><div className="rounded-xl bg-[#f4f1e9] p-3"><p className="font-semibold text-[#18231f]">{streakYears}</p><p className="mt-1 text-[#819078]">años</p></div></div>{weekDates.every((date) => completedDayDates.includes(date)) && <div className="mt-4 rounded-xl bg-[#e7f5b4] p-3 text-center text-sm font-semibold text-[#60703d]">Semana completada. Siete días siguiendo tu rumbo.</div>}</div>}
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#dfe4d8]"><div className="h-full rounded-full bg-[#72873f] transition-all" style={{ width: dayCompleted ? "100%" : "0%" }} /></div>
-      <div className="mt-6 space-y-3">{meals.map((meal) => {
-        const isOpen = openMeal === meal.id;
-        const isOutside = selectedMealsOutSlots.includes(slotForMeal(meal));
-        const displayedMealName = outsideName(meal, isOutside);
-        return <div key={meal.id} className={`overflow-hidden rounded-2xl border ${dayCompleted ? "border-[#b6c77b] bg-[#eef5d2]" : "border-[#d3dbcf] bg-white/50"}`}>
-          <button type="button" onClick={() => setOpenMeal(isOpen ? null : meal.id)} className={`flex w-full items-center justify-between gap-3 p-4 text-left ${isOutside ? "bg-[#fff8ed]" : ""}`}><span><span className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#819078]">{meal.suggestedTime ? meal.suggestedTime.slice(0, 5) : "Flexible"}</span><span className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold">{isOutside && <><MapPin size={16} className="text-[#b8792e]" /> <span className="rounded-full bg-[#f8e4bf] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#9a6422]">Portátil</span></>}{displayedMealName}</span></span><span className="flex items-center gap-3 text-sm text-[#68736b]"><span>{meal.targetCalories} kcal</span><ChevronDown size={18} className={isOpen ? "rotate-180" : ""} /></span></button>
-            {isOpen && <div className="border-t border-[#d3dbcf] px-4 pb-5 pt-3"><div className="space-y-2">{meal.items.map((item) => { const selectedFood = item.alternativeGroup ? selectedAlternatives[`${meal.id}:${item.alternativeGroup}`] : undefined; const displayedName = selectedFood ?? item.name; const displayedQuantity = selectedFood === item.selectedFoodName ? item.selectedQuantityGrams ?? item.quantityGrams : equivalentQuantity(item, selectedFood); const style = foodTypeStyle(item.role); const alternativeKey = `${meal.id}:${item.id}`; const alternativesForItem = item.alternativeGroup ? alternatives[item.alternativeGroup] ?? [] : []; const alternativesOpen = openAlternative === alternativeKey; return <div key={item.id} className={`rounded-xl border px-4 py-3 transition-shadow ${style.className} ${alternativesOpen ? "shadow-[0_8px_20px_rgba(24,35,31,0.08)]" : ""}`}><div className="flex items-center justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-[#18231f]">{displayedName}</p><span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold">{style.label}</span></div><p className="mt-1 text-xs opacity-75">{displayedQuantity} g · cocinado</p></div>{item.alternativeGroup && alternativesForItem.length > 0 ? <button type="button" onClick={() => setOpenAlternative(alternativesOpen ? null : alternativeKey)} aria-expanded={alternativesOpen} className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold shadow-sm transition ${alternativesOpen ? "border-[#72873f] bg-[#18231f] text-[#d7f36b]" : "border-white/80 bg-white/70 text-[#60703d] hover:border-[#72873f] hover:bg-white"}`}><RefreshCw size={13} className={alternativesOpen ? "rotate-180 transition-transform" : "transition-transform"} /> {alternativesOpen ? "Cerrar" : "Cambiar alimento"}</button> : null}</div>{alternativesOpen ? <div className="mt-3 border-t border-white/60 pt-3"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#60703d]">Alternativas equivalentes</p><div className="mt-2 flex flex-wrap gap-2">{alternativesForItem.map((food) => <button key={food} type="button" onClick={() => { void selectAlternative(meal.id, item.alternativeGroup as string, food, meal.items); }} className={`rounded-full border px-3 py-2 text-xs font-medium ${selectedAlternatives[`${meal.id}:${item.alternativeGroup}`] === food ? "border-[#72873f] bg-[#e7f5b4] text-[#60703d]" : "border-white/70 bg-white/60 text-[#68736b] hover:border-[#72873f]"}`}>{food}</button>)}</div><p className="mt-2 text-xs text-[#819078]">Puedes probar varias opciones; la cantidad se recalcula para mantener la equivalencia.</p></div> : null}</div>; })}</div><div className="mt-4 flex gap-2 border-l-2 border-[#b6c77b] pl-3 text-sm text-[#68736b]"><ChefHat className="shrink-0 text-[#72873f]" size={17} /><p>{preparationForMeal({ ...meal, name: displayedMealName })}</p></div></div>}
-  </div>;
-      })}</div>
-    </section>
-  );
+
+      <aside className="space-y-4">
+        {reference && <section className="rounded-[1.4rem] border border-[#e1e7eb] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#758992]">Referencia diaria</p><p className="mt-3 text-3xl font-semibold tracking-tight">{reference.calories} <span className="text-sm font-medium text-[#71858c]">kcal</span></p><p className="mt-1 text-xs text-[#71858c]">Objetivo de tu plan, no consumo registrado.</p><div className="mt-5 grid grid-cols-3 gap-2 text-xs">{[{ label: "Proteína", amount: reference.proteinGrams }, { label: "Hidratos", amount: reference.carbsGrams }, { label: "Grasas", amount: reference.fatsGrams }].map(({ label, amount }) => <div key={label} className="rounded-xl bg-[#f7f9f9] p-3"><strong className="block text-sm">{Math.round(amount)} g</strong><span className="mt-1 block text-[#71858c]">{label}</span></div>)}</div></section>}
+        <section className="rounded-[1.4rem] border border-[#e1e7eb] bg-white p-5">
+          <h2 className="text-base font-bold">Herramientas</h2><p className="mt-1 text-xs leading-5 text-[#71858c]">Tu plan y tus opciones, cuando las necesites.</p>
+          <div className="mt-3 divide-y divide-[#edf1f2]">{([{ id: "settings", label: "Gestionar alimentación", icon: ChefHat }, { id: "outside", label: "Comidas fuera de casa", icon: MapPin }, { id: "shopping", label: "Lista de compra", icon: ShoppingBasket }] as const).map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => setOpenTool(openTool === id ? null : id)} aria-expanded={openTool === id} className={`flex min-h-14 w-full items-center gap-3 rounded-lg text-left text-sm font-semibold ${focus}`}><Icon size={18} className="text-[#b6503c]" aria-hidden="true" /><span className="flex-1">{label}</span><ChevronDown size={17} className={openTool === id ? "rotate-180" : ""} aria-hidden="true" /></button>)}</div>
+          {openTool === "settings" && <div className="rounded-xl bg-[#f7f9f9] p-3"><p className="text-xs font-semibold text-[#526e69]">Comidas al día</p><div className="mt-2 flex flex-wrap gap-2">{[3, 4, 5, 6].map((option) => <button key={option} type="button" disabled={readOnly || isChangingMealCount || option === mealCount} onClick={() => void changeMealCount(option)} className={`min-h-10 min-w-10 rounded-full border px-3 text-sm font-semibold disabled:opacity-60 ${option === mealCount ? "border-[#b6503c] bg-[#fff1ed] text-[#9f4b39]" : "border-[#e1e7eb] bg-white text-[#526e69]"} ${focus}`}>{option}</button>)}</div>{isChangingMealCount && <p className="mt-2 text-xs text-[#526e69]">Actualizando dieta...</p>}{mealCountError && <p role="alert" className="mt-2 text-xs font-semibold text-[#a64e3c]">{mealCountError}</p>}<Link href="/nutrition/builder" className={`mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-[#b6503c] px-4 text-xs font-semibold text-white ${focus}`}><ChefHat size={15} aria-hidden="true" /> Gestionar dietas</Link></div>}
+          {openTool === "outside" && <div className="rounded-xl bg-[#f7f9f9] p-3"><p className="text-xs leading-5 text-[#526e75]">Marca las comidas que te cuesta hacer en casa para adaptar tu dieta.</p><div className="mt-3 flex flex-wrap gap-2">{mealOutOptions.map((option) => <button key={option.id} type="button" disabled={readOnly || savingMealsOut} aria-pressed={selectedMealsOutSlots.includes(option.id)} onClick={() => void toggleMealOutSlot(option.id)} className={`min-h-10 rounded-full border px-3 text-xs font-semibold disabled:opacity-50 ${selectedMealsOutSlots.includes(option.id) ? "border-[#b6503c] bg-[#fff1ed] text-[#9f4b39]" : "border-[#dce6e6] bg-white text-[#526e75]"} ${focus}`}>{option.label}</button>)}</div>{savingMealsOut && <p className="mt-2 text-xs text-[#526e69]">Guardando preferencia...</p>}{mealsOutError && <p role="alert" className="mt-2 text-xs font-semibold text-[#a64e3c]">{mealsOutError}</p>}{mealsOutNeedsRegeneration && <button type="button" disabled={savingMealsOut} onClick={() => void retryMealsOutRegeneration()} className={`mt-2 min-h-10 rounded-full border border-[#e4d7d2] bg-white px-3 text-xs font-semibold text-[#9f4b39] disabled:opacity-50 ${focus}`}>Reintentar cálculo</button>}</div>}
+          {openTool === "shopping" && <div className="rounded-xl bg-[#f7f9f9] p-3"><p className="text-xs leading-5 text-[#526e75]">Cantidades orientativas para 7 días repitiendo el plan, con las opciones seleccionadas.</p><ul className="mt-2 space-y-2">{shoppingList.map((item) => <li key={item.name} className="flex justify-between gap-3 text-xs text-[#526e75]"><span>{item.name}</span><span>{Math.round(item.grams)} g</span></li>)}</ul></div>}
+        </section>
+      </aside>
+    </div>
+
+    {milestoneMessage && <div className="mt-6 rounded-2xl border border-[#e1e7eb] bg-white p-4 text-sm font-semibold text-[#b6503c]">{milestoneMessage}</div>}
+    {activeAssistantMeal && <NutritionAssistantDialog key={activeAssistantMeal.id} mealName={activeAssistantMeal.name} foods={activeAssistantMeal.items.map((item) => displayedItem(activeAssistantMeal, item))} onClose={() => { setAssistantMealId(null); assistantTriggerRef.current?.focus(); }} />}
+  </section>;
 }

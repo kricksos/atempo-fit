@@ -47,13 +47,8 @@ export default function LoginPage() {
       window.sessionStorage.removeItem("momentum_onboarding_token");
       window.localStorage.removeItem("momentum_onboarding_token");
       if (conversionResult.planningMode !== "manual") {
-        setStatus("Perfil guardado. Preparando tu rutina y tu dieta...");
-        const planResponse = await fetch("/api/plans/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-        if (!planResponse.ok) {
-          setIsSubmitting(false);
-          setStatus("Tu cuenta está confirmada, pero no hemos podido preparar todavía tu plan. Puedes intentarlo desde el dashboard.");
-          return;
-        }
+        router.push("/plans/generate");
+        return;
       }
     }
 
@@ -93,7 +88,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
+    <main className="app-canvas min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-5xl flex-col">
         <header><Link href="/" className="flex items-center gap-3" aria-label="Volver a Atempo Fit"><span className="grid size-10 place-items-center rounded-xl bg-[#18231f] text-[#d7f36b]"><Sparkles size={18} /></span><span className="font-semibold">Atempo Fit</span></Link></header>
         <section className="grid flex-1 items-center gap-14 py-14 lg:grid-cols-[0.9fr_1.1fr]">

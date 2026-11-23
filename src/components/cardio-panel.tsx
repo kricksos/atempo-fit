@@ -8,11 +8,13 @@ import type { CardioRecommendation } from "@/features/planning/cardio";
 
 type CardioPanelProps = {
   recommendations: Array<CardioRecommendation & { workoutDayId: string }>;
+  additionalSuggestions?: CardioRecommendation[];
   availableDays: Array<{ id: string; label: string }>;
   initialConfigurations?: Record<string, { modality: string; duration: number; intensity: CardioRecommendation["intensity"] }>;
+  disabledConfigurations?: Record<string, { key: string; modality: string; duration: number; intensity: CardioRecommendation["intensity"] }>;
 };
 
-export function CardioPanel({ recommendations, availableDays, initialConfigurations = {} }: CardioPanelProps) {
+export function CardioPanel({ recommendations, additionalSuggestions = [], availableDays, initialConfigurations = {}, disabledConfigurations = {} }: CardioPanelProps) {
   const router = useRouter();
   const [items, setItems] = useState(recommendations);
   const [dayByKey, setDayByKey] = useState<Record<string, string>>(() => Object.fromEntries(recommendations.map((item) => [item.key, item.workoutDayId])));
@@ -70,11 +72,12 @@ export function CardioPanel({ recommendations, availableDays, initialConfigurati
 
   function addCardioDay() {
     if (!newDayId) return;
-    const key = `custom-${newDayId}`;
-    const item: CardioRecommendation & { workoutDayId: string } = { key, workoutDayId: newDayId, title: "Cardio adicional", modalities: ["Cinta", "Bicicleta", "Elíptica", "Remo", "Caminar al aire libre"], durationMinutes: 20, intensity: "Suave", effort: "Configura este bloque según tu objetivo y recuperación." };
+    const saved = disabledConfigurations[newDayId];
+    const key = saved?.key ?? `custom-${newDayId}`;
+    const item: CardioRecommendation & { workoutDayId: string } = { key, workoutDayId: newDayId, title: "Cardio adicional", modalities: ["Cinta", "Bicicleta", "Elíptica", "Remo", "Caminar al aire libre"], durationMinutes: saved?.duration ?? 20, intensity: saved?.intensity ?? "Suave", effort: "Configura este bloque según tu objetivo y recuperación." };
     setItems((current) => [...current, item]);
     setDayByKey((current) => ({ ...current, [key]: newDayId }));
-    setConfigByKey((current) => ({ ...current, [key]: { modality: item.modalities[0], duration: item.durationMinutes, intensity: item.intensity } }));
+    setConfigByKey((current) => ({ ...current, [key]: { modality: saved?.modality ?? item.modalities[0], duration: item.durationMinutes, intensity: item.intensity } }));
     setNewDayId("");
   }
 
@@ -85,6 +88,9 @@ export function CardioPanel({ recommendations, availableDays, initialConfigurati
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#819078]">Cardio</p>
           <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Tu plan de movimiento</h3>
         </div>
+        <p className="mt-4 text-sm leading-6 text-[#68736b]">El cardio es una propuesta adicional al tiempo de fuerza: puedes hacerlo en otro momento. No se registra al finalizar los ejercicios. Empieza de forma gradual y consulta a un profesional si tienes lesiones o dudas.</p>
+        <p className="mt-2 text-xs leading-5 text-[#68736b]">Como referencia general para adultos, se recomiendan 150 minutos semanales de actividad moderada o 75 de vigorosa; también cuenta la actividad realizada fuera de Atempo Fit. Cualquier cantidad adaptada a tus posibilidades suma.</p>
+        {additionalSuggestions.length > 0 && <p className="mt-2 text-sm leading-6 text-[#68736b]">Otra opción fuera de los días de fuerza: {additionalSuggestions.map((item) => `${item.title.toLowerCase()}, ${item.durationMinutes} min (${item.intensity.toLowerCase()})`).join("; ")}.</p>}
         <div className="inline-flex items-center gap-2 rounded-full bg-[#eef0e8] px-3 py-1.5 text-xs font-semibold text-[#60703d]">
           <Activity size={14} /> Configuración semanal
         </div>
@@ -99,7 +105,7 @@ export function CardioPanel({ recommendations, availableDays, initialConfigurati
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#819078]">{item.intensity}</p>
                   <h4 className="mt-2 text-lg font-semibold">{item.title}</h4>
-                  <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.1em] text-[#819078]">Entrenamiento<select value={dayByKey[item.key] ?? item.workoutDayId} onChange={(event) => setDayByKey((current) => ({ ...current, [item.key]: event.target.value }))} className="mt-1 rounded-xl border border-[#d3dbcf] bg-[#f8f7f1] px-2.5 py-1.5 text-xs font-semibold normal-case tracking-normal text-[#60703d] outline-none"><option value={item.workoutDayId}>{availableDays.find((day) => day.id === (dayByKey[item.key] ?? item.workoutDayId))?.label ?? "Día de entrenamiento"}</option>{availableDays.filter((day) => day.id !== (dayByKey[item.key] ?? item.workoutDayId) && !Object.values(dayByKey).includes(day.id)).map((day) => <option key={day.id} value={day.id}>{day.label}</option>)}</select></label>
+                  <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.1em] text-[#819078]">Entrenamiento<select value={dayByKey[item.key] ?? item.workoutDayId} onChange={(event) => setDayByKey((current) => ({ ...current, [item.key]: event.target.value }))} className="mt-1 rounded-xl border border-[#d3dbcf] bg-[#f8f7f1] px-2.5 py-1.5 text-xs font-semibold normal-case tracking-normal text-[#60703d] outline-none"><option value={dayByKey[item.key] ?? item.workoutDayId}>{availableDays.find((day) => day.id === (dayByKey[item.key] ?? item.workoutDayId))?.label ?? "Día de entrenamiento"}</option>{availableDays.filter((day) => day.id !== (dayByKey[item.key] ?? item.workoutDayId) && !Object.values(dayByKey).includes(day.id) && !disabledConfigurations[day.id]).map((day) => <option key={day.id} value={day.id}>{day.label}</option>)}</select></label>
                 </div>
                 <button type="button" title="Eliminar cardio de este día" aria-label="Eliminar cardio de este día" disabled={isRemoving === item.key} onClick={() => removeConfiguration(item)} className="absolute right-3 top-3 rounded-full p-2 text-[#9b6a58] transition hover:bg-[#f6e8de] disabled:opacity-50"><Trash2 size={16} /></button>
               </div>

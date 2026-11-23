@@ -1,78 +1,65 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, LockKeyhole, Mail, UserRound } from "lucide-react";
 import { useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
-type AccountFormProps = { initialName: string; initialEmail: string };
+const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#375dac]";
+const field = `mt-2 min-h-11 w-full rounded-xl border border-[#dce6e8] bg-white px-3 text-base text-[#173b44] ${focus}`;
+const button = `inline-flex min-h-11 items-center gap-2 rounded-full bg-[#173b44] px-5 text-sm font-semibold text-white disabled:opacity-60 ${focus}`;
 
-export function AccountForm({ initialName, initialEmail }: AccountFormProps) {
+export function AccountNameForm({ initialName, initialEmail, hasProfile, onSaved }: { initialName: string; initialEmail: string; hasProfile: boolean; onSaved: (name: string) => void }) {
   const [name, setName] = useState(initialName);
-  const [isSavingName, setIsSavingName] = useState(false);
-  const [nameMessage, setNameMessage] = useState<string | null>(null);
-
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   async function saveName() {
-    if (!name.trim()) { setNameMessage("El nombre no puede estar vacío."); return; }
-    setIsSavingName(true);
-    setNameMessage(null);
-    const supabase = createClient();
-    const { data: auth } = await supabase.auth.getUser();
-    const [{ error: metadataError }, { error: profileError }] = await Promise.all([
-      supabase.auth.updateUser({ data: { name: name.trim() } }),
-      auth.user ? supabase.from("profiles").update({ name: name.trim() }).eq("user_id", auth.user.id) : Promise.resolve({ error: null }),
-    ]);
-    setIsSavingName(false);
-    setNameMessage(metadataError || profileError ? "No hemos podido guardar tu nombre. Inténtalo de nuevo." : "Nombre actualizado.");
+    const trimmed = name.trim();
+    if (!trimmed) { setMessage({ text: "El nombre no puede estar vacío.", error: true }); return; }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const supabase = createClient();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError || !auth.user) throw new Error("No hemos podido comprobar tu sesión. Inicia sesión de nuevo.");
+      const { error: metadataError } = await supabase.auth.updateUser({ data: { name: trimmed } });
+      if (metadataError) throw new Error("No hemos podido guardar tu nombre. Inténtalo de nuevo.");
+      if (hasProfile) {
+        const { data, error } = await supabase.from("profiles").update({ name: trimmed }).eq("user_id", auth.user.id).select("user_id").maybeSingle();
+        if (error || !data) throw new Error("El nombre de acceso se ha actualizado, pero no hemos podido actualizar tu perfil. Inténtalo de nuevo.");
+      }
+      onSaved(trimmed);
+      setMessage({ text: "Nombre actualizado.", error: false });
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : "No hemos podido guardar tu nombre. Inténtalo de nuevo.", error: true });
+    } finally { setSaving(false); }
   }
 
+  return <div className="space-y-4">
+    <section className="rounded-[1.5rem] border border-[#e1e9eb] bg-white p-5 sm:p-6"><div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#e7f6f3] text-[#08786f]"><UserRound size={20} aria-hidden="true" /></span><div><h2 className="font-semibold">Tu nombre</h2><p className="mt-1 text-sm leading-6 text-[#71858c]">Así te llamaremos en tu espacio personal.</p></div></div><label className="mt-5 block text-sm font-semibold text-[#526e75]">Nombre<input className={field} value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label><button type="button" disabled={saving} onClick={saveName} className={`mt-4 ${button}`}>{saving ? <><LoaderCircle size={16} className="animate-spin" /> Guardando...</> : "Guardar nombre"}</button>{message && <p role={message.error ? "alert" : "status"} className={`mt-3 text-sm ${message.error ? "text-[#a64e3c]" : "text-[#08786f]"}`}>{message.text}</p>}</section>
+    <section className="rounded-[1.5rem] border border-[#e1e9eb] bg-white p-5 sm:p-6"><div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#edf2ff] text-[#375dac]"><Mail size={20} aria-hidden="true" /></span><div className="min-w-0"><h2 className="font-semibold">Correo de acceso</h2><p className="mt-1 text-sm leading-6 text-[#71858c]">Utilizas este correo para acceder a tu cuenta. No se puede modificar desde aquí.</p><p className="mt-4 break-all text-sm font-semibold text-[#315d5a]">{initialEmail || "Sin correo"}</p></div></div></section>
+  </div>;
+}
+
+export function AccountPasswordForm() {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   async function savePassword() {
-    if (newPassword.length < 8) { setPasswordMessage("La contraseña debe tener al menos 8 caracteres."); return; }
-    if (newPassword !== confirmPassword) { setPasswordMessage("Las contraseñas no coinciden."); return; }
-    setIsSavingPassword(true);
-    setPasswordMessage(null);
-    const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setIsSavingPassword(false);
-    setPasswordMessage(error ? "No hemos podido actualizar tu contraseña. Inténtalo de nuevo." : "Contraseña actualizada.");
-    if (!error) { setNewPassword(""); setConfirmPassword(""); }
+    if (password.length < 8) { setMessage({ text: "La contraseña debe tener al menos 8 caracteres.", error: true }); return; }
+    if (password !== confirmation) { setMessage({ text: "Las contraseñas no coinciden.", error: true }); return; }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const { error } = await createClient().auth.updateUser({ password });
+      if (error) throw new Error("No hemos podido actualizar tu contraseña. Inténtalo de nuevo.");
+      setPassword("");
+      setConfirmation("");
+      setMessage({ text: "Contraseña actualizada.", error: false });
+    } catch (error) { setMessage({ text: error instanceof Error ? error.message : "No hemos podido actualizar tu contraseña. Inténtalo de nuevo.", error: true }); }
+    finally { setSaving(false); }
   }
-
-  return (
-    <div className="mt-8 space-y-6">
-      <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6">
-        <h2 className="text-lg font-semibold">Nombre</h2>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <input value={name} onChange={(event) => setName(event.target.value)} className="w-full max-w-xs rounded-xl border border-[#d3dbcf] bg-white px-3 py-2 text-base" />
-          <button type="button" disabled={isSavingName} onClick={saveName} className="flex items-center gap-2 rounded-full bg-[#18231f] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60">
-            {isSavingName ? <LoaderCircle size={16} className="animate-spin" /> : "Guardar"}
-          </button>
-        </div>
-        {nameMessage ? <p className="mt-3 text-sm text-[#68736b]">{nameMessage}</p> : null}
-      </section>
-
-      <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6">
-        <h2 className="text-lg font-semibold">Email</h2>
-        <p className="mt-2 text-sm text-[#68736b]">El email es la identidad principal del usuario y no se modifica desde aquí.</p>
-        <div className="mt-4 rounded-xl border border-[#d3dbcf] bg-white px-3 py-2 text-sm font-medium text-[#18231f]">{initialEmail}</div>
-      </section>
-
-      <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6">
-        <h2 className="text-lg font-semibold">Contraseña</h2>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <input type="password" placeholder="Nueva contraseña" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full max-w-xs rounded-xl border border-[#d3dbcf] bg-white px-3 py-2 text-base" />
-          <input type="password" placeholder="Confirmar contraseña" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full max-w-xs rounded-xl border border-[#d3dbcf] bg-white px-3 py-2 text-base" />
-          <button type="button" disabled={isSavingPassword} onClick={savePassword} className="flex items-center gap-2 rounded-full bg-[#18231f] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60">
-            {isSavingPassword ? <LoaderCircle size={16} className="animate-spin" /> : "Guardar"}
-          </button>
-        </div>
-        {passwordMessage ? <p className="mt-3 text-sm text-[#68736b]">{passwordMessage}</p> : null}
-      </section>
-    </div>
-  );
+  return <section className="rounded-[1.5rem] border border-[#e1e9eb] bg-white p-5 sm:p-6"><div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#edf2ff] text-[#375dac]"><LockKeyhole size={20} aria-hidden="true" /></span><div><h2 className="font-semibold">Contraseña</h2><p className="mt-1 text-sm leading-6 text-[#71858c]">Mantén protegido el acceso a tu cuenta.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold text-[#526e75]">Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Al menos 8 caracteres" className={field} /></label><label className="text-sm font-semibold text-[#526e75]">Confirmar contraseña<input type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className={field} /></label></div><button type="button" disabled={saving} onClick={savePassword} className={`mt-4 ${button}`}>{saving ? <><LoaderCircle size={16} className="animate-spin" /> Guardando...</> : "Actualizar contraseña"}</button>{message && <p role={message.error ? "alert" : "status"} className={`mt-3 text-sm ${message.error ? "text-[#a64e3c]" : "text-[#08786f]"}`}>{message.text}</p>}</section>;
 }

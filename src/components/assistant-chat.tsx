@@ -3,7 +3,7 @@
 import { Bot, Send, Sparkles, X } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+import { requestAssistantResponse, type AssistantMessage } from "@/lib/assistant-client";
 
 const suggestions = [
   "¿Qué entreno hoy?",
@@ -17,7 +17,7 @@ export function AssistantChat() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,18 +40,14 @@ export function AssistantChat() {
     setMessages(nextMessages);
     setIsLoading(true);
 
-    const response = await fetch("/api/assistant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: content, history: messages.slice(-10) }),
-    });
-    const data = await response.json().catch(() => ({}));
-    setIsLoading(false);
-    if (!response.ok) {
-      setError(data.error ?? "No he podido responder ahora.");
-      return;
+    try {
+      const answer = await requestAssistantResponse(content, messages);
+      setMessages([...nextMessages, { role: "assistant", content: answer }]);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No he podido responder ahora.");
+    } finally {
+      setIsLoading(false);
     }
-    setMessages([...nextMessages, { role: "assistant", content: data.answer }]);
   }
 
   return (

@@ -1,0 +1,41 @@
+import reviewed from "../data/illustration-library/automatic-reviewed.json";
+
+const entries = [
+  { name: "Remo sentado con banda elástica", difficulty: "beginner", equipment: ["resistance_band"], restrictions: ["back_injury", "shoulder_injury", "elbow_injury"], muscles: ["lats", "biceps", "traps"] },
+  { name: "Caminata de isquiotibiales desde puente", difficulty: "intermediate", equipment: [], restrictions: ["back_injury", "knee_injury", "hip_injury"], muscles: ["hamstrings", "glutes", "core"] },
+  { name: "Elevación de gemelos en escalón", difficulty: "beginner", equipment: ["step"], restrictions: ["ankle_injury"], muscles: ["calves"] },
+  { name: "Elevación de gemelo a una pierna con mancuerna en escalón", difficulty: "intermediate", equipment: ["step", "dumbbell"], restrictions: ["ankle_injury"], muscles: ["calves"] },
+  { name: "Bisagra de cadera con mancuernas hasta las rodillas", difficulty: "beginner", equipment: ["dumbbell"], restrictions: ["back_injury", "hip_injury"], muscles: ["hamstrings", "glutes", "lower_back", "core"] },
+  { name: "Remo inclinado con mochila", difficulty: "beginner", equipment: ["backpack"], restrictions: ["back_injury", "shoulder_injury", "elbow_injury"], muscles: ["lats", "biceps", "traps"] },
+  { name: "Curl de bíceps con mochila", difficulty: "beginner", equipment: ["backpack"], restrictions: ["elbow_injury", "wrist_injury"], muscles: ["biceps", "forearms"] },
+  { name: "Curl de bíceps con banda elástica", difficulty: "beginner", equipment: ["resistance_band"], restrictions: ["elbow_injury", "wrist_injury"], muscles: ["biceps", "forearms"] },
+  { name: "Elevaciones laterales con banda elástica", difficulty: "beginner", equipment: ["resistance_band"], restrictions: ["shoulder_injury"], muscles: ["deltoids"] },
+  { name: "Press de hombros con banda elástica", difficulty: "beginner", equipment: ["resistance_band"], restrictions: ["shoulder_injury", "elbow_injury"], muscles: ["deltoids", "triceps", "core"] },
+  { name: "Sentadilla con banda elástica", difficulty: "beginner", equipment: ["resistance_band"], restrictions: ["knee_injury", "hip_injury"], muscles: ["quadriceps", "glutes", "core"] },
+  { name: "Extensión de cadera con banda de pie", difficulty: "beginner", equipment: ["resistance_band"], restrictions: ["hip_injury", "back_injury"], muscles: ["glutes", "hamstrings", "core"] },
+  { name: "Zancada atrás sin carga", difficulty: "beginner", equipment: [], restrictions: ["knee_injury", "hip_injury", "ankle_injury"], muscles: ["quadriceps", "glutes"] },
+  { name: "Zancada lateral sin carga", difficulty: "beginner", equipment: [], restrictions: ["knee_injury", "hip_injury", "ankle_injury"], muscles: ["quadriceps", "glutes"] },
+  { name: "Subida lateral al escalón", difficulty: "beginner", equipment: ["step"], restrictions: ["knee_injury", "hip_injury", "ankle_injury"], muscles: ["quadriceps", "glutes"] },
+  { name: "Peso muerto con pesa rusa", difficulty: "beginner", equipment: ["kettlebell"], restrictions: ["back_injury", "hip_injury", "knee_injury"], muscles: ["glutes", "hamstrings", "lower_back", "core"] },
+  { name: "Peso muerto rumano con pesa rusa", difficulty: "beginner", equipment: ["kettlebell"], restrictions: ["back_injury", "hip_injury"], muscles: ["hamstrings", "glutes", "lower_back", "core"] },
+  { name: "Zancada con pesa rusa al pecho", difficulty: "beginner", equipment: ["kettlebell"], restrictions: ["knee_injury", "hip_injury", "ankle_injury"], muscles: ["quadriceps", "glutes", "core"] },
+  { name: "Sentadilla goblet con pesa rusa", difficulty: "beginner", equipment: ["kettlebell"], restrictions: ["knee_injury", "hip_injury"], muscles: ["quadriceps", "glutes", "core"] },
+  { name: "Puente de glúteos con peso corporal", difficulty: "beginner", equipment: [], restrictions: ["back_injury", "hip_injury"], muscles: ["glutes", "hamstrings", "core"] },
+  { name: "Abdominal bicicleta", difficulty: "beginner", equipment: [], restrictions: ["back_injury", "neck_injury"], muscles: ["core"] },
+  { name: "Plancha con toque de hombro", difficulty: "intermediate", equipment: [], restrictions: ["shoulder_injury", "wrist_injury", "elbow_injury"], muscles: ["core", "deltoids"] },
+  { name: "Patada de glúteos en cuadrupedia", difficulty: "beginner", equipment: [], restrictions: ["back_injury", "hip_injury", "knee_injury"], muscles: ["glutes", "core"] },
+  { name: "Remo con pesa rusa apoyado en banco", difficulty: "beginner", equipment: ["kettlebell", "bench"], restrictions: ["back_injury", "shoulder_injury", "elbow_injury"], muscles: ["lats", "biceps", "traps"] },
+] as const;
+
+export const homeExerciseFixtures = entries.map((entry, index) => ({
+  id: `migration-fixture-${index}`,
+  name: entry.name,
+  description: reviewed[entry.name].description,
+  primary_muscle: entry.muscles[0],
+  muscle_groups: [...entry.muscles],
+  difficulty: entry.difficulty,
+  equipment_required: [...entry.equipment],
+  restrictions: [...entry.restrictions],
+  media_source: "atempo-illustration-pending",
+  is_momentum_approved: true,
+}));

@@ -1,5 +1,6 @@
 "use client";
 
+import { NavigationLink } from "@/components/navigation-control";
 import { ArrowRight, CheckCircle2, LoaderCircle, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -87,7 +88,7 @@ function ResetPasswordForm() {
           {searchParams.get("code") ? null : <p className="mt-5 text-sm text-[#68736b]">Este enlace se usa para recuperar la contraseña. Si acabas de recibirlo, puedes continuar con el cambio.</p>}
 
           <div className="mt-6 text-center text-sm text-[#68736b]">
-            <Link href="/login" className="font-semibold text-[#60703d] underline underline-offset-4">Volver al login</Link>
+            <NavigationLink href="/login" kind="back">Volver al login</NavigationLink>
           </div>
         </div>
       </div>

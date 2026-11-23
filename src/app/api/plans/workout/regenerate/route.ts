@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
-import { generateInitialPlan, parsePlanningProfile } from "@/features/planning/engine";
+import { generateInitialPlan, parsePlanningProfile, PlanningAvailabilityError } from "@/features/planning/engine";
+import { adaptationGate, adaptationTokenSchema, readOptionalJson } from "@/features/planning/adaptation-gate";
 import { getPlanningExerciseCatalog } from "@/lib/exercise-catalog";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-export async function POST() {
+export async function POST(request: Request) {
   const authClient = await createClient();
   const { data: auth } = await authClient.auth.getUser();
   if (!auth.user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 
   try {
+    const parsed = z.object({ adaptationToken: adaptationTokenSchema }).safeParse(await readOptionalJson(request));
+    if (!parsed.success) return NextResponse.json({ error: "Revisa los datos de actualización de la rutina." }, { status: 400 });
     const db = createAdminClient();
     const { data: profile, error: profileError } = await db.from("profiles").select("*").eq("user_id", auth.user.id).single();
     if (profileError || !profile) return NextResponse.json({ error: "Complete your profile first." }, { status: 400 });
@@ -22,11 +26,13 @@ export async function POST() {
       db.from("workout_plan_versions").select("version_number").eq("workout_plan_id", workoutPlan.id).order("version_number", { ascending: false }).limit(1).maybeSingle(),
     ]);
 
-    const generatedPlan = generateInitialPlan(parsePlanningProfile(profile), await getPlanningExerciseCatalog());
+    const generatedPlan = generateInitialPlan(parsePlanningProfile(profile), await getPlanningExerciseCatalog(), { allowAdaptation: true });
+    const gate = adaptationGate(generatedPlan, parsed.data.adaptationToken, { scope: "workout-review", userId: auth.user.id, profile, workoutPlan, previousVersion, latestVersion });
+    if (gate) return gate;
     const { data: run, error: runError } = await db.from("plan_generation_runs").insert({ user_id: auth.user.id, run_type: "manual_regeneration", status: "pending", input_snapshot: profile, engine_version: "rules-v1" }).select("id").single();
     if (runError || !run) throw runError ?? new Error("Unable to start workout generation.");
 
-    const { data: version, error: versionError } = await db.from("workout_plan_versions").insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: (latestVersion?.version_number ?? 0) + 1, profile_snapshot: profile, reason: "injury_change", active: false }).select("id").single();
+    const { data: version, error: versionError } = await db.from("workout_plan_versions").insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: (latestVersion?.version_number ?? 0) + 1, profile_snapshot: { ...profile, workout_adaptations: generatedPlan.workoutAdaptations }, reason: "injury_change", active: false }).select("id").single();
     if (versionError || !version) throw versionError ?? new Error("Unable to create workout version.");
 
     const exerciseNames = [...new Set(generatedPlan.days.flatMap((day) => day.exercises.map((exercise) => exercise.name)))];
@@ -51,9 +57,10 @@ export async function POST() {
     if (activateError) throw activateError;
     await db.from("plan_generation_runs").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", run.id);
     await db.from("profiles").update({ workout_plan_review_needed: false }).eq("user_id", auth.user.id);
-    return NextResponse.json({ regenerated: true, type: "workout" });
+    return NextResponse.json({ regenerated: true, type: "workout", adaptations: generatedPlan.workoutAdaptations });
   } catch (error) {
     console.error("Unable to regenerate workout", error instanceof Error ? error.message : "Unknown error");
+    if (error instanceof PlanningAvailabilityError) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to regenerate workout." }, { status: 500 });
   }
 }

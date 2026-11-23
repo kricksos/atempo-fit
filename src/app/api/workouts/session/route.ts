@@ -4,19 +4,25 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { computeStreaks } from "@/features/gamification/xp";
+import { isTimedPrescription } from "@/features/planning/movement-patterns";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 
 const startSchema = z.object({ action: z.literal("start"), workoutDayId: z.string().uuid() });
+const logSchema = z.object({
+  exerciseId: z.string().uuid(), setNumber: z.number().int().positive(),
+  weightKg: z.number().min(0), repetitions: z.number().int().min(0).max(32767),
+  durationSeconds: z.number().int().min(1).max(3600).nullable().optional(),
+});
 const completeSchema = z.object({
   action: z.literal("complete"),
   sessionId: z.string().uuid(),
   durationMinutes: z.number().int().min(1).max(600),
-  logs: z.array(z.object({ exerciseId: z.string().uuid(), setNumber: z.number().int().positive(), weightKg: z.number().min(0), repetitions: z.number().int().min(0) })),
+  logs: z.array(logSchema),
 });
 const saveSchema = z.object({
   action: z.literal("save"),
   sessionId: z.string().uuid(),
-  logs: z.array(z.object({ exerciseId: z.string().uuid(), setNumber: z.number().int().positive(), weightKg: z.number().min(0), repetitions: z.number().int().min(0) })),
+  logs: z.array(logSchema),
 });
 const requestSchema = z.discriminatedUnion("action", [startSchema, saveSchema, completeSchema]);
 
@@ -50,17 +56,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ sessionId: session.id, startedAt: session.started_at });
     }
 
-    const { data: session } = await client.from("workout_sessions").select("id, user_id, completed").eq("id", parsed.data.sessionId).single();
-    if (!session || session.user_id !== authData.user.id || session.completed) return NextResponse.json({ error: "Workout session is not available." }, { status: 403 });
-    const { error: logsError } = await client.from("exercise_logs").upsert(parsed.data.logs.map((log) => ({ workout_session_id: session.id, exercise_id: log.exerciseId, weight_kg: log.weightKg, repetitions: log.repetitions, set_number: log.setNumber, completed: true })), { onConflict: "workout_session_id,exercise_id,set_number" });
+    const { data: session } = await client.from("workout_sessions").select("id, user_id, completed, workout_day_id").eq("id", parsed.data.sessionId).single();
+    if (!session || session.user_id !== authData.user.id || session.completed || !session.workout_day_id) return NextResponse.json({ error: "Workout session is not available." }, { status: 403 });
+    const { data: dayExercises, error: dayError } = await client.from("workout_exercises").select("exercise_id, repetitions, sets").eq("workout_day_id", session.workout_day_id);
+    if (dayError) throw dayError;
+    const exerciseIds = [...new Set(parsed.data.logs.map((log) => log.exerciseId))];
+    const { data: catalog, error: catalogError } = exerciseIds.length
+      ? await client.from("exercises").select("id, name").in("id", exerciseIds)
+      : { data: [], error: null };
+    if (catalogError) throw catalogError;
+    const timedExerciseIds = new Set<string>();
+    for (const log of parsed.data.logs) {
+      const exercise = dayExercises?.find((item) => item.exercise_id === log.exerciseId);
+      const name = catalog?.find((item) => item.id === log.exerciseId)?.name;
+      if (!exercise || !name || log.setNumber > exercise.sets) return NextResponse.json({ error: "El ejercicio no pertenece a esta sesión." }, { status: 400 });
+      const timed = isTimedPrescription(name, exercise.repetitions);
+      if ((timed && (log.weightKg !== 0 || log.repetitions !== 0)) || (!timed && log.durationSeconds != null)) {
+        return NextResponse.json({ error: "Revisa los segundos o las repeticiones del ejercicio." }, { status: 400 });
+      }
+      if (timed) timedExerciseIds.add(log.exerciseId);
+    }
+    const { error: logsError } = await client.from("exercise_logs").upsert(parsed.data.logs.map((log) => ({ workout_session_id: session.id, exercise_id: log.exerciseId, weight_kg: timedExerciseIds.has(log.exerciseId) ? null : log.weightKg, repetitions: log.repetitions, duration_seconds: log.durationSeconds ?? null, set_number: log.setNumber, completed: true })), { onConflict: "workout_session_id,exercise_id,set_number" });
     if (logsError) throw logsError;
     if (parsed.data.action === "save") return NextResponse.json({ saved: true });
     const { error: completeError } = await client.from("workout_sessions").update({ completed: true, completed_at: new Date().toISOString(), duration_minutes: parsed.data.durationMinutes }).eq("id", session.id);
     if (completeError) throw completeError;
 
-    const exerciseIds = [...new Set(parsed.data.logs.map((log) => log.exerciseId))];
     const currentBestByExercise = new Map<string, number>();
-    for (const log of parsed.data.logs) currentBestByExercise.set(log.exerciseId, Math.max(currentBestByExercise.get(log.exerciseId) ?? 0, log.weightKg));
+    for (const log of parsed.data.logs.filter((item) => !timedExerciseIds.has(item.exerciseId))) currentBestByExercise.set(log.exerciseId, Math.max(currentBestByExercise.get(log.exerciseId) ?? 0, log.weightKg));
     const { data: previousSessions } = await client.from("workout_sessions").select("id").eq("user_id", authData.user.id).eq("completed", true).neq("id", session.id);
     const previousSessionIds = (previousSessions ?? []).map((previousSession) => previousSession.id);
     const { data: previousLogs } = previousSessionIds.length && exerciseIds.length

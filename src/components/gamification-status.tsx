@@ -1,10 +1,11 @@
 "use client";
 
-import { Apple, Check, ChevronDown, Flame, LineChart, Dumbbell, Target, Trophy } from "lucide-react";
+import { Apple, ArrowRight, Check, ChevronDown, Flame, LineChart, Dumbbell, Sparkles, Target, Trophy, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 
 import type { GamificationSummary } from "@/components/account-status";
+import { HeaderMenuPopover } from "@/components/header-menu-popover";
 
 const categoryMeta = {
   entrenamiento: { label: "Entrenamiento", icon: Dumbbell },
@@ -15,16 +16,25 @@ const categoryMeta = {
   progreso: { label: "Progreso", icon: LineChart },
 } as const;
 
-type GamificationStatusProps = { email: string; summary: GamificationSummary };
+const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#375dac]";
 
-export function GamificationStatus({ email, summary }: GamificationStatusProps) {
-  const [isOpen, setIsOpen] = useState(false);
+type GamificationStatusProps = {
+  email: string;
+  summary: GamificationSummary;
+  appearance?: "default" | "dark";
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: (restoreFocus: boolean) => void;
+  buttonRef: RefObject<HTMLButtonElement | null>;
+  anchorRef: RefObject<HTMLDivElement | null>;
+};
+
+export function GamificationStatus({ email, summary, appearance = "default", isOpen, onToggle, onClose, buttonRef, anchorRef }: GamificationStatusProps) {
   const [newAchievementIds, setNewAchievementIds] = useState<string[]>([]);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const storageKey = `momentum_seen_achievements:${email}`;
-  const unlockedAchievements = summary.achievements.filter((achievement) => achievement.unlocked);
-  const nextAchievement = summary.achievements.find((achievement) => !achievement.unlocked) ?? null;
-  const recentUnlockedAchievements = unlockedAchievements.slice(-4);
-  const unlockedSignature = unlockedAchievements.map((achievement) => achievement.id).join("|");
+  const unlocked = summary.achievements.filter((achievement) => achievement.unlocked);
+  const unlockedSignature = unlocked.map((achievement) => achievement.id).join("|");
 
   useEffect(() => {
     const unlockedIds = summary.achievements.filter((achievement) => achievement.unlocked).map((achievement) => achievement.id);
@@ -33,10 +43,8 @@ export function GamificationStatus({ email, summary }: GamificationStatusProps) 
       window.localStorage.setItem(storageKey, JSON.stringify(unlockedIds));
       return;
     }
-
     try {
       const seenIds = JSON.parse(storedIds) as string[];
-      // localStorage is external state; hydrate the notification marker after mount.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setNewAchievementIds(unlockedIds.filter((id) => !seenIds.includes(id)));
     } catch {
@@ -44,54 +52,37 @@ export function GamificationStatus({ email, summary }: GamificationStatusProps) 
     }
   }, [storageKey, unlockedSignature, summary.achievements]);
 
-  function togglePanel() {
-    if (isOpen) {
-      setIsOpen(false);
-      setNewAchievementIds([]);
-      return;
+  function toggle() {
+    if (!isOpen) {
+      setHighlightId(newAchievementIds[0] ?? null);
+      if (newAchievementIds.length > 0) {
+        window.localStorage.setItem(storageKey, JSON.stringify(unlocked.map((achievement) => achievement.id)));
+        setNewAchievementIds([]);
+      }
     }
-
-    setIsOpen(true);
-    if (newAchievementIds.length > 0) {
-      window.localStorage.setItem(storageKey, JSON.stringify(unlockedAchievements.map((achievement) => achievement.id)));
-    }
+    onToggle();
   }
 
-  function closePanel() {
-    setIsOpen(false);
-    setNewAchievementIds([]);
-  }
+  return <>
+    <button ref={buttonRef} type="button" onClick={toggle} aria-expanded={isOpen} aria-controls="header-progress-menu" aria-label={`Nivel ${summary.level}. Ver logros`} className={`relative flex min-h-11 items-center gap-2 rounded-full border py-1 pl-1.5 pr-2.5 text-left shadow-sm transition-colors ${appearance === "dark" ? "border-white/20 bg-white/5 text-white hover:bg-white/10" : "border-[#dfe5ec] bg-white text-[#375dac] hover:border-[#9fb5de]"} ${focus}`}>
+      <span className="grid size-8 place-items-center rounded-full bg-[#edf2ff] text-xs font-bold text-[#375dac]">{summary.level}</span><span className={`hidden text-xs font-bold sm:block ${appearance === "dark" ? "text-white" : "text-[#375dac]"}`}>Nivel {summary.level}<span className={`mt-0.5 block font-normal ${appearance === "dark" ? "text-[#c5d8da]" : "text-[#71858c]"}`}>{unlocked.length} logros</span></span><ChevronDown size={15} aria-hidden="true" className={isOpen ? "rotate-180" : ""} />
+      {newAchievementIds.length > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full border-2 border-white bg-[#b6503c] text-[10px] font-bold text-white" aria-label="Tienes logros nuevos">{Math.min(newAchievementIds.length, 9)}</span>}
+    </button>
+    {isOpen && <HeaderMenuPopover anchorRef={anchorRef} id="header-progress-menu" titleId="header-progress-title" onClose={onClose}><GamificationPanel summary={summary} highlightId={highlightId} onClose={onClose} /></HeaderMenuPopover>}
+  </>;
+}
 
-  return (
-    <div className="relative">
-      <button type="button" onClick={togglePanel} aria-expanded={isOpen} aria-label={`Nivel ${summary.level}. Ver logros`} className="relative flex items-center gap-2 rounded-full border border-[#aeb9a2] bg-white px-3 py-2 text-left transition-colors hover:border-[#18231f]">
-        <span className="grid size-7 place-items-center rounded-full bg-[#e7f5b4] text-xs font-bold text-[#60703d]">{summary.level}</span>
-        <span className="hidden sm:block"><span className="block text-xs font-semibold text-[#60703d]">Nivel {summary.level}</span><span className="block text-xs text-[#59645e]">{unlockedAchievements.length} logros</span></span>
-        <ChevronDown size={14} className={`text-[#60703d] transition-transform ${isOpen ? "rotate-180" : ""}`} />
-        {newAchievementIds.length > 0 ? <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-[#c0492f] text-[9px] font-bold text-white" aria-label="Tienes logros nuevos">{newAchievementIds.length}</span> : null}
-      </button>
-      {isOpen ? (
-        <>
-          <button type="button" aria-label="Cerrar panel de logros" onClick={closePanel} className="fixed inset-0 z-10 cursor-default" />
-          <section className="absolute right-0 top-14 z-20 w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-[#d3dbcf] bg-[#f8f7f1] p-5 text-left shadow-[0_20px_50px_rgba(24,35,31,0.16)]">
-            <div className="flex items-start justify-between gap-4">
-              <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#819078]">Tu progreso</p><h2 className="mt-1 text-2xl font-semibold">Nivel {summary.level}</h2><p className="mt-1 text-sm text-[#68736b]">{summary.isMaxLevel ? `${summary.xp} XP · nivel máximo` : `${summary.xpIntoLevel} / ${summary.xpForNextLevel} XP`}</p></div>
-              <div className="flex items-center gap-1.5 rounded-xl border border-[#e3e7dd] bg-white px-3 py-2 text-xs font-semibold text-[#60703d]"><Flame size={15} className="text-[#c0492f]" /> {summary.currentStreak} días</div>
-            </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#dfe4d8]"><div className="h-full rounded-full bg-[#72873f] transition-all" style={{ width: `${summary.progressPercent}%` }} /></div>
-            <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${summary.weeklyGoal.completed ? "border-[#b6c77b] bg-[#e7f5b4] text-[#3d4a24]" : "border-[#d3dbcf] bg-white text-[#68736b]"}`}><span className="font-semibold">Objetivo semanal:</span> {summary.weeklyGoal.completed ? "completado" : `${summary.weeklyGoal.activeDays} / ${summary.weeklyGoal.targetDays} días activos`}</div>
-            <div className="mt-5 flex items-center justify-between"><h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-[#819078]">Logros</h3><span className="text-xs text-[#819078]"><Trophy size={12} className="mr-1 inline" />{unlockedAchievements.length} / {summary.achievements.length}</span></div>
-            <div className="mt-3 space-y-1.5">
-              {recentUnlockedAchievements.map((achievement) => <div key={achievement.id} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm ${newAchievementIds.includes(achievement.id) ? "border-[#d39a42] bg-[#fff1c6]" : "border-[#b6c77b] bg-[#e7f5b4]"}`}><span className="flex min-w-0 items-center gap-2"><Check size={14} className="shrink-0 text-[#60703d]" /><span className="truncate font-medium text-[#3d4a24]">{achievement.title}</span></span><span className="shrink-0 text-xs font-semibold text-[#60703d]">+{achievement.xp} XP</span></div>)}
-              {unlockedAchievements.length > recentUnlockedAchievements.length ? <p className="px-1 pt-1 text-xs text-[#819078]">+ {unlockedAchievements.length - recentUnlockedAchievements.length} logros conseguidos anteriormente</p> : null}
-              {nextAchievement ? <div className="mt-3 rounded-xl border border-[#d3dbcf] bg-white px-3 py-2.5"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#819078]">Siguiente objetivo</p><div className="mt-1 flex items-center justify-between gap-3 text-sm text-[#68736b]"><span className="truncate font-medium">{nextAchievement.title}</span><span className="shrink-0 text-xs">+{nextAchievement.xp} XP</span></div></div> : null}
-            </div>
-            <Link href="/achievements" className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#18231f] px-4 py-2.5 text-sm font-semibold text-white">Ver todos los logros</Link>
-          </section>
-        </>
-      ) : null}
-    </div>
-  );
+export function GamificationPanel({ summary, highlightId, onClose }: { summary: GamificationSummary; highlightId?: string | null; onClose: (restoreFocus: boolean) => void }) {
+  const unlocked = summary.achievements.filter((achievement) => achievement.unlocked);
+  const featured = unlocked.find((achievement) => achievement.id === highlightId) ?? unlocked[unlocked.length - 1];
+  return <>
+    <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#375dac]">Tu progreso</p><h2 id="header-progress-title" className="mt-1 text-xl font-bold tracking-tight">Cada paso cuenta.</h2><p className="mt-1 text-xs leading-5 text-[#71858c]">Un vistazo a tu recorrido.</p></div><button type="button" onClick={() => onClose(true)} aria-label="Cerrar progreso" className={`grid size-10 shrink-0 place-items-center rounded-full text-[#71858c] hover:bg-[#f1f5f5] ${focus}`}><X size={18} aria-hidden="true" /></button></div>
+    <div className="mt-4 rounded-2xl border border-[#dce5f9] bg-[#f2f6ff] p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold text-[#526e8d]">Tu nivel actual</p><p className="mt-1 text-2xl font-bold tracking-tight text-[#233e79]">Nivel {summary.level}</p></div><span className="grid size-11 place-items-center rounded-2xl bg-white text-[#375dac]"><Sparkles size={20} aria-hidden="true" /></span></div><div className="mt-3 flex justify-between gap-2 text-xs text-[#526e8d]"><span>{summary.isMaxLevel ? "Nivel máximo" : `Progreso al nivel ${summary.level + 1}`}</span><span className="font-semibold">{summary.isMaxLevel ? `${summary.xp} XP` : `${summary.xpIntoLevel} / ${summary.xpForNextLevel} XP`}</span></div><div role="progressbar" aria-label={summary.isMaxLevel ? "Nivel máximo alcanzado" : `Progreso al nivel ${summary.level + 1}`} aria-valuenow={summary.progressPercent} aria-valuemin={0} aria-valuemax={100} className="mt-2 h-2 overflow-hidden rounded-full bg-[#dce5f6]"><div className="h-full rounded-full bg-[#5277c6]" style={{ width: `${summary.progressPercent}%` }} /></div></div>
+    <div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-2xl border border-[#e8e5f1] bg-[#f8f6fc] p-3"><p className="flex items-center gap-1.5 text-xs font-semibold text-[#7550a4]"><Flame size={14} aria-hidden="true" /> Esta semana</p><p className="mt-2 text-lg font-bold">{summary.weeklyGoal.activeDays} <span className="text-sm font-medium text-[#71858c]">/ {summary.weeklyGoal.targetDays} días</span></p><p className="mt-1 text-[11px] leading-4 text-[#71858c]">{summary.weeklyGoal.completed ? "Objetivo cumplido" : "Días activos"}</p></div><div className="rounded-2xl border border-[#e6edf1] bg-[#f7f9fa] p-3"><p className="flex items-center gap-1.5 text-xs font-semibold text-[#526e75]"><Trophy size={14} aria-hidden="true" /> Tus logros</p><p className="mt-2 text-lg font-bold">{unlocked.length} <span className="text-sm font-medium text-[#71858c]">/ {summary.achievements.length}</span></p><p className="mt-1 text-[11px] leading-4 text-[#71858c]">Conseguidos</p></div></div>
+    <p className="mt-3 text-xs text-[#647b82]">Racha actual: {summary.currentStreak} días · Mejor racha: {summary.bestStreak} días</p>
+    {featured ? <div className="mt-4 flex items-center gap-3 rounded-2xl border border-[#d9eae2] bg-[#f3faf6] p-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e2f4eb] text-[#34785f]"><Check size={18} aria-hidden="true" /></span><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#50836c]">{featured.id === highlightId ? "Nuevo logro" : "Un logro conseguido"}</p><p className="mt-1 text-sm font-semibold">{featured.title}</p></div><span className="shrink-0 text-xs font-semibold text-[#50836c]">+{featured.xp} XP</span></div> : <p className="mt-4 rounded-2xl bg-[#f7f9f9] p-4 text-sm text-[#647b82]">Todavía no tienes logros. Cada paso cuenta.</p>}
+    <Link href="/achievements" onClick={() => onClose(false)} className={`mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-[#173b44] px-4 text-sm font-semibold text-white hover:bg-[#24535a] ${focus}`}>Ver todos los logros <ArrowRight size={16} aria-hidden="true" /></Link>
+  </>;
 }
 
 export function GamificationOverview({ summary }: { summary: GamificationSummary }) {

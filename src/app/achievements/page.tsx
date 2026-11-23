@@ -1,3 +1,4 @@
+import { NavigationLink } from "@/components/navigation-control";
 import Link from "next/link";
 
 import { AppHeader } from "@/components/app-header";
@@ -67,11 +68,11 @@ export default async function AchievementsPage() {
   const accountName = profile?.name ?? (typeof auth.user.user_metadata?.name === "string" ? auth.user.user_metadata.name : "Mi cuenta");
 
   return (
-    <main className="min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
+    <main className="app-canvas min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
       <div className="mx-auto max-w-6xl">
         <AppHeader email={auth.user.email ?? ""} name={accountName} gamification={{ ...gamification, currentStreak, bestStreak }} />
         <section className="mt-14">
-          <Link href="/dashboard" className="text-sm font-semibold text-[#68736b] hover:text-[#18231f]">← Volver al dashboard</Link>
+          <NavigationLink href="/dashboard" kind="dashboard">Volver al dashboard</NavigationLink>
           <p className="mt-10 text-sm font-semibold uppercase tracking-[0.16em] text-[#819078]">Tu progreso</p>
           <div className="mt-4 flex flex-wrap items-end justify-between gap-5"><div><h1 className="text-5xl font-semibold tracking-[-0.07em] sm:text-7xl">Nivel {gamification.level}</h1><p className="mt-4 max-w-xl text-lg leading-8 text-[#68736b]">Cada entrenamiento y cada registro construyen tu progreso.</p></div><div className="rounded-2xl border border-[#d3dbcf] bg-[#f8f7f1] px-5 py-4"><p className="text-xs uppercase tracking-[0.14em] text-[#819078]">XP total</p><p className="mt-1 text-2xl font-semibold">{gamification.xp} XP</p><p className="mt-1 text-sm text-[#68736b]">{gamification.isMaxLevel ? "Nivel máximo" : `${gamification.xpIntoLevel} / ${gamification.xpForNextLevel} XP para avanzar`}</p></div></div>
           <div className="mt-8 h-3 overflow-hidden rounded-full bg-[#dfe4d8]"><div className="h-full rounded-full bg-[#72873f]" style={{ width: `${gamification.progressPercent}%` }} /></div>

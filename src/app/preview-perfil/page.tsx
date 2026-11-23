@@ -1,0 +1,8 @@
+import { notFound } from "next/navigation";
+
+import { ProfilePreview } from "./preview";
+
+export default function ProfilePreviewPage() {
+  if (process.env.NODE_ENV !== "development") notFound();
+  return <ProfilePreview />;
+}

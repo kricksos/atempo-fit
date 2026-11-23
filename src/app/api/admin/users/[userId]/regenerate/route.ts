@@ -4,10 +4,11 @@ import { z } from "zod";
 import { isAdminUser } from "@/lib/admin-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { generateInitialPlan, parsePlanningProfile } from "@/features/planning/engine";
+import { generateInitialPlan, parsePlanningProfile, PlanningAvailabilityError } from "@/features/planning/engine";
+import { adaptationGate, adaptationTokenSchema } from "@/features/planning/adaptation-gate";
 import { getPlanningExerciseCatalog } from "@/lib/exercise-catalog";
 
-const schema = z.object({ type: z.enum(["workout", "nutrition"]) });
+const schema = z.object({ type: z.enum(["workout", "nutrition"]), adaptationToken: adaptationTokenSchema });
 type Context = { params: Promise<{ userId: string }> };
 
 export async function POST(request: Request, context: Context) {
@@ -23,9 +24,22 @@ export async function POST(request: Request, context: Context) {
     const db = createAdminClient();
     const { data: profile } = await db.from("profiles").select("*").eq("user_id", userId).single();
     if (!profile) return NextResponse.json({ error: "User profile not found." }, { status: 404 });
+    const workoutResult = parsed.data.type === "workout"
+      ? await db.from("workout_plans").select("id").eq("user_id", userId).eq("active", true).maybeSingle()
+      : { data: null, error: null };
+    if (workoutResult.error) throw workoutResult.error;
+    if (parsed.data.type === "workout" && !workoutResult.data) return NextResponse.json({ error: "No hay una rutina activa para actualizar." }, { status: 400 });
+    const previousResult = workoutResult.data
+      ? await db.from("workout_plan_versions").select("id, version_number").eq("workout_plan_id", workoutResult.data.id).eq("active", true).maybeSingle()
+      : { data: null, error: null };
+    if (previousResult.error) throw previousResult.error;
+    const current = generateInitialPlan(parsePlanningProfile(profile), parsed.data.type === "workout" ? await getPlanningExerciseCatalog() : [], { allowAdaptation: parsed.data.type === "workout" });
+    if (parsed.data.type === "workout") {
+      const gate = adaptationGate(current, parsed.data.adaptationToken, { scope: "admin", actorId: auth.user.id, userId, profile, workoutPlan: workoutResult.data, previousVersion: previousResult.data });
+      if (gate) return gate;
+    }
     const { data: run, error: runError } = await db.from("plan_generation_runs").insert({ user_id: userId, run_type: "manual_regeneration", status: "pending", input_snapshot: profile, engine_version: "admin-v1" }).select("id").single();
     if (runError || !run) throw runError ?? new Error("Unable to create generation run.");
-    const current = generateInitialPlan(parsePlanningProfile(profile), await getPlanningExerciseCatalog());
 
     if (parsed.data.type === "nutrition") {
       const { data: nutritionPlan } = await db.from("nutrition_plans").select("id").eq("user_id", userId).eq("active", true).maybeSingle();
@@ -45,27 +59,32 @@ export async function POST(request: Request, context: Context) {
         await db.from("nutrition_meal_items").insert(items);
       }
     } else {
-      const { data: workoutPlan } = await db.from("workout_plans").select("id").eq("user_id", userId).eq("active", true).single();
-      const { data: oldVersion } = workoutPlan ? await db.from("workout_plan_versions").select("id, version_number").eq("workout_plan_id", workoutPlan.id).eq("active", true).maybeSingle() : { data: null };
+      const workoutPlan = workoutResult.data;
+      const oldVersion = previousResult.data;
       if (!workoutPlan) throw new Error("Workout plan not found.");
       if (oldVersion) await db.from("workout_plan_versions").update({ active: false }).eq("id", oldVersion.id);
-      const { data: version } = await db.from("workout_plan_versions").insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: (oldVersion?.version_number ?? 0) + 1, profile_snapshot: profile, reason: "goal_change" }).select("id").single();
-      if (!version) throw new Error("Unable to create workout version.");
+      const { data: version, error: versionError } = await db.from("workout_plan_versions").insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: (oldVersion?.version_number ?? 0) + 1, profile_snapshot: { ...profile, workout_adaptations: current.workoutAdaptations }, reason: "goal_change" }).select("id").single();
+      if (versionError || !version) throw versionError ?? new Error("Unable to create workout version.");
       const exerciseNames = [...new Set(current.days.flatMap((day) => day.exercises.map((exercise) => exercise.name)))];
-      const { data: exercises } = await db.from("exercises").select("id, name").in("name", exerciseNames);
-      const exerciseByName = new Map((exercises ?? []).map((exercise) => [exercise.name, exercise.id]));
+      const { data: exercises, error: exercisesError } = await db.from("exercises").select("id, name").in("name", exerciseNames);
+      if (exercisesError || !exercises) throw exercisesError ?? new Error("Exercise catalog is unavailable.");
+      const exerciseByName = new Map(exercises.map((exercise) => [exercise.name, exercise.id]));
       for (const [index, day] of current.days.entries()) {
         const { data: savedDay } = await db.from("workout_days").insert({ workout_plan_version_id: version.id, name: day.name, order_number: index + 1 }).select("id").single();
         if (!savedDay) throw new Error("Unable to create workout day.");
-        await db.from("workout_exercises").insert(day.exercises.map((exercise, exerciseIndex) => ({ workout_day_id: savedDay.id, exercise_id: exerciseByName.get(exercise.name)!, sets: exercise.sets, repetitions: exercise.repetitions, rest_seconds: exercise.restSeconds, order_number: exerciseIndex + 1 })));
+        const entries = day.exercises.map((exercise, exerciseIndex) => ({ workout_day_id: savedDay.id, exercise_id: exerciseByName.get(exercise.name)!, sets: exercise.sets, repetitions: exercise.repetitions, rest_seconds: exercise.restSeconds, order_number: exerciseIndex + 1 }));
+        if (entries.some((entry) => !entry.exercise_id)) throw new Error("Generated exercise is missing from catalog.");
+        const { error: insertError } = await db.from("workout_exercises").insert(entries);
+        if (insertError) throw insertError;
       }
     }
 
     await db.from("plan_generation_runs").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", run.id);
     await db.from("audit_events").insert({ user_id: userId, entity_type: `${parsed.data.type}_plan`, action: "update", metadata: { actor_user_id: auth.user.id, actor_email: auth.user.email, source: "admin_panel", action: "regenerate" } });
-    return NextResponse.json({ regenerated: true, type: parsed.data.type });
+    return NextResponse.json({ regenerated: true, type: parsed.data.type, adaptations: parsed.data.type === "workout" ? current.workoutAdaptations : [] });
   } catch (error) {
     console.error("Unable to regenerate plan from admin", error instanceof Error ? error.message : "Unknown error");
+    if (error instanceof PlanningAvailabilityError) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ error: "Unable to regenerate plan." }, { status: 500 });
   }
 }

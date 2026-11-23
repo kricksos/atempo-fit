@@ -62,14 +62,16 @@ export function ProgressPanel({ entries, primaryGoal, daysSinceLastMeasurement }
         on_track: "Al comprobarlo con más detalle (incluyendo tu entrenamiento), tu progreso va bien: no hemos hecho cambios.",
         insufficient_data: "Aún no hay suficientes semanas de datos para decidir con fiabilidad. Sigue registrando tu peso.",
         low_compliance: "Antes de ajustar el plan, intenta seguirlo con más regularidad: los cambios solo son fiables si hay constancia.",
+        review_required: "No hemos encontrado un cambio automático compatible con el tiempo y volumen de tu rutina. Revisa el plan con un profesional.",
       };
-      setAdjustMessage(messages[data.reason] ?? "No hemos podido reajustar tu plan. Inténtalo de nuevo más tarde.");
+      setAdjustMessage(messages[data.reason] ?? (typeof data.error === "string" ? data.error : "No hemos podido reajustar tu plan. Inténtalo de nuevo más tarde."));
       return;
     }
     const parts: string[] = [];
     if (data.nutritionAdjusted) parts.push(`tu dieta ahora tiene ${data.calories} kcal`);
     if (data.workoutAdjusted) parts.push("hemos ajustado los ejercicios estancados de tu rutina (más series, otro rango de repeticiones o sustitución)");
-    setAdjustMessage(`Listo: ${parts.join(" y ")}.`);
+    const pendingWorkout = !data.workoutAdjusted && data.exerciseActions && Object.values(data.exerciseActions).includes("no_further_automatic_action");
+    setAdjustMessage(`Listo: ${parts.join(" y ")}.${pendingWorkout ? " La rutina necesita revisión antes de aplicar más cambios automáticos." : ""}`);
   }
 
   return (
@@ -78,7 +80,7 @@ export function ProgressPanel({ entries, primaryGoal, daysSinceLastMeasurement }
         <div className="rounded-2xl border-2 border-[#c0492f] bg-[#f9e2da] px-4 py-4">
           <p className="text-sm font-semibold text-[#7a2e1a]">Llevas unas 3 semanas sin avanzar hacia tu objetivo de {normalizedPrimaryGoal.toLowerCase()}.</p>
           <p className="mt-1 text-sm text-[#7a2e1a]">Podemos reajustar tu dieta y tu rutina para desbloquear el progreso.</p>
-          <button type="button" disabled={isAdjusting} onClick={requestAdjustment} className="mt-3 rounded-full bg-[#18231f] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60">
+          <button type="button" disabled={isAdjusting} onClick={requestAdjustment} className="mt-3 rounded-full bg-[#34566e] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60">
             {isAdjusting ? "Reajustando..." : "Reajustar plan"}
           </button>
           {adjustMessage ? <p className="mt-2 text-sm font-semibold text-[#7a2e1a]">{adjustMessage}</p> : null}

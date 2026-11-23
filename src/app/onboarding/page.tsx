@@ -1,12 +1,17 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, LoaderCircle, Sparkles } from "lucide-react";
+import { NavigationButton } from "@/components/navigation-control";
+import { ArrowRight, Check, LoaderCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { foodRestrictionOptions } from "@/lib/food-restrictions";
+import { EquipmentSelector } from "@/components/equipment-selector";
+import { homeEquipmentOptions } from "@/lib/exercise-equipment";
 import { injuryOptions } from "@/lib/injuries";
+import { trainingPlaces } from "@/lib/training-place";
+import { continuityOptions, experienceOptions, techniqueOptions, undisclosedTrainingAnswer } from "@/lib/training-experience";
 
 const questions = [
   { key: "goal", title: "¿Cuál es tu objetivo principal?", description: "Elegiremos el punto de partida que mejor encaja contigo.", type: "single_select", options: ["Ganar masa muscular", "Perder grasa", "Recomposición corporal", "Mantener peso", "Mejorar rendimiento", "Mejorar salud general"] },
@@ -15,10 +20,13 @@ const questions = [
   { key: "height", title: "¿Cuánto mides?", description: "Puedes introducir tu altura en centímetros.", type: "number", unit: "cm" },
   { key: "weight", title: "¿Cuál es tu peso actual?", description: "No buscamos juzgarte, solo conocer tu punto de partida.", type: "number", unit: "kg" },
   { key: "target_weight", title: "¿A qué peso te gustaría llegar?", description: "Es opcional. Tu objetivo también puede ser sentirte mejor y rendir más.", type: "number", unit: "kg" },
-  { key: "experience", title: "¿Cuál es tu experiencia entrenando?", description: "Así evitamos darte un plan demasiado fácil o demasiado exigente.", type: "single_select", options: ["Nunca he entrenado", "Menos de 1 año", "Entre 1 y 3 años", "Entre 3 y 5 años", "Más de 5 años"] },
+  { key: "experience", title: "¿Cuál es tu experiencia entrenando fuerza?", description: "Así evitamos darte un plan demasiado fácil o demasiado exigente.", type: "single_select", options: experienceOptions },
+  { key: "training_continuity", title: "¿Cómo ha sido tu entrenamiento de fuerza recientemente?", description: "La continuidad importa además de los años acumulados.", type: "single_select", options: [...continuityOptions, undisclosedTrainingAnswer] },
+  { key: "training_technique", title: "¿Cómo valoras tu experiencia técnica?", description: "Es una autoevaluación orientativa, no una valoración profesional.", type: "single_select", options: [...techniqueOptions, undisclosedTrainingAnswer] },
   { key: "days_per_week", title: "¿Cuántos días puedes entrenar?", description: "Elegiremos una frecuencia sostenible para tu semana.", type: "single_select", options: ["2 días", "3 días", "4 días", "5 días", "6 días"] },
-  { key: "session_duration", title: "¿Cuánto tiempo tienes por sesión?", description: "Un buen plan empieza por respetar tu tiempo disponible.", type: "single_select", options: ["30 minutos", "45 minutos", "60 minutos", "90 minutos"] },
-  { key: "training_place", title: "¿Dónde entrenas habitualmente?", description: "Adaptaremos los ejercicios a tu entorno y al material que tienes disponible.", type: "single_select", options: ["Gimnasio completo", "Gimnasio básico", "Casa", "Mixto"] },
+  { key: "session_duration", title: "¿Cuánto tiempo tienes para fuerza por sesión?", description: "El tiempo es orientativo e incluye calentamiento y descansos. El cardio se añade aparte.", type: "single_select", options: ["30 minutos", "45 minutos", "60 minutos", "90 minutos"] },
+  { key: "training_place", title: "¿Dónde entrenas habitualmente?", description: "Si entrenas en casa, después podrás indicar tu material.", type: "single_select", options: trainingPlaces.map((place) => place.value) },
+  { key: "training_equipment", title: "¿Qué material tienes en casa?", description: "Marca el material básico del que dispones o elige «Sin material».", type: "multi_select", options: ["Sin material", ...homeEquipmentOptions.map((option) => option.label)] },
   { key: "workout_planning_mode", title: "¿Cómo quieres empezar tu rutina?", description: "Puedes dejar que Atempo Fit la prepare por ti o crearla a tu manera desde tu dashboard.", type: "single_select", options: ["Automática", "Manual"] },
   { key: "daily_activity", title: "¿Cómo es tu actividad diaria?", description: "Esto ayuda a entender mejor tu ritmo de vida.", type: "single_select", options: ["Trabajo sentado", "Algo activo", "Activo", "Trabajo físico exigente"] },
   { key: "sleep", title: "¿Cuántas horas duermes normalmente?", description: "El descanso también forma parte del progreso.", type: "single_select", options: ["Menos de 5", "5 - 6", "6 - 7", "7 - 8", "Más de 8"] },
@@ -40,12 +48,7 @@ const optionDescriptions: Record<string, Record<string, string>> = {
     "Mejorar rendimiento": "Entrenar para moverte mejor, rendir más y sentirte más capaz.",
     "Mejorar salud general": "Construir una base sostenible de movimiento, energía y bienestar.",
   },
-  training_place: {
-    "Gimnasio completo": "Máquinas, poleas, barras, mancuernas y material variado.",
-    "Gimnasio básico": "Mancuernas, barras y material esencial; sin depender de máquinas avanzadas.",
-    Casa: "Peso corporal, bandas, mancuernas o kettlebell, según lo que tengas.",
-    Mixto: "Combinas casa y gimnasio según el día o la disponibilidad.",
-  },
+  training_place: Object.fromEntries(trainingPlaces.map((place) => [place.value, place.description])),
   diet: {
     Omnívoro: "Comes de todo: carne, pescado, huevos, lácteos y vegetales.",
     Vegetariano: "Sin carne ni pescado; sí huevos y lácteos.",
@@ -65,10 +68,12 @@ export default function OnboardingPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [profileConverted, setProfileConverted] = useState(false);
 
-  const question = questions[currentIndex];
+  const visibleQuestions = questions.filter((item) => item.key !== "training_equipment" || answers.training_place !== "Gimnasio");
+  const question = visibleQuestions[currentIndex];
   const currentAnswer = answers[question.key];
-  const progress = Math.round(((currentIndex + 1) / questions.length) * 100);
+  const progress = Math.round(((currentIndex + 1) / visibleQuestions.length) * 100);
 
   useEffect(() => {
     const storedToken = window.sessionStorage.getItem("momentum_onboarding_token");
@@ -96,11 +101,11 @@ export default function OnboardingPage() {
   function selectAnswer(value: Answer) {
     if (question.type === "multi_select") {
       const selected = Array.isArray(currentAnswer) ? currentAnswer : [];
-      if (value === "Ninguna") {
-        setAnswers((previous) => ({ ...previous, [question.key]: ["Ninguna"] }));
+      if (value === "Ninguna" || value === "Sin material") {
+        setAnswers((previous) => ({ ...previous, [question.key]: [String(value)] }));
         return;
       }
-      const selectedWithoutNone = selected.filter((item) => item !== "Ninguna");
+      const selectedWithoutNone = selected.filter((item) => item !== "Ninguna" && item !== "Sin material");
       const nextValue = selected.includes(String(value))
         ? selectedWithoutNone.filter((item) => item !== String(value))
         : [...selectedWithoutNone, String(value)];
@@ -108,7 +113,9 @@ export default function OnboardingPage() {
       return;
     }
 
-    setAnswers((previous) => ({ ...previous, [question.key]: value }));
+    setAnswers((previous) => question.key === "training_place" && previous.training_place !== value
+      ? { ...previous, training_place: value, training_equipment: [] }
+      : { ...previous, [question.key]: value });
   }
 
   async function completeOnboarding() {
@@ -127,15 +134,18 @@ export default function OnboardingPage() {
       body: JSON.stringify({ sessionToken }),
     });
 
-    const conversion = (await conversionResponse.json().catch(() => ({}))) as { converted?: boolean; planningMode?: "auto" | "manual" };
+    const conversion = (await conversionResponse.json()) as { converted?: boolean; planningMode?: "auto" | "manual"; error?: string };
+    if (!conversionResponse.ok) throw new Error(conversion.error ?? "No hemos podido guardar tu perfil.");
 
     if (conversion.converted) {
+      setProfileConverted(true);
       window.sessionStorage.removeItem("momentum_onboarding_token");
       window.localStorage.removeItem("momentum_onboarding_token");
     }
 
     if (conversion.converted && conversion.planningMode !== "manual") {
-      await fetch("/api/plans/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      router.push("/plans/generate?from=onboarding");
+      return;
     }
 
     router.push(conversion.converted && conversion.planningMode === "manual" ? "/workout/builder" : "/preview");
@@ -147,7 +157,7 @@ export default function OnboardingPage() {
     if (!sessionToken) return;
 
     if (!hasAnswer) {
-      setCurrentIndex((index) => Math.min(index + 1, questions.length - 1));
+      setCurrentIndex((index) => Math.min(index + 1, visibleQuestions.length - 1));
       return;
     }
 
@@ -176,13 +186,13 @@ export default function OnboardingPage() {
       }
 
       if (!response.ok) throw new Error("No hemos podido guardar tu respuesta.");
-      if (currentIndex === questions.length - 1) {
+      if (currentIndex === visibleQuestions.length - 1) {
         await completeOnboarding();
       } else {
-        setCurrentIndex((index) => Math.min(index + 1, questions.length - 1));
+        setCurrentIndex((index) => Math.min(index + 1, visibleQuestions.length - 1));
       }
-    } catch {
-      setError("No hemos podido guardar esta respuesta. Comprueba tu conexión e inténtalo de nuevo.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No hemos podido guardar esta respuesta. Comprueba tu conexión e inténtalo de nuevo.");
     } finally {
       setIsSaving(false);
     }
@@ -200,7 +210,7 @@ export default function OnboardingPage() {
     ];
 
     return (
-      <main className="min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
+      <main className="app-canvas min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
         <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-5xl flex-col">
           <header className="flex items-center justify-between"><Link href="/" className="flex items-center gap-3" aria-label="Volver a Atempo Fit"><span className="grid size-10 place-items-center rounded-xl bg-[#18231f] text-[#d7f36b] shadow-[0_8px_20px_rgba(24,35,31,0.14)]"><Sparkles size={18} /></span><span className="font-semibold">Atempo Fit</span></Link><span className="rounded-full border border-[#d3dbcf] bg-[#f8f7f1] px-3 py-1.5 text-sm text-[#68736b]">Perfil completado</span></header>
           <section className="flex flex-1 flex-col justify-center py-12"><p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#819078]">Tu punto de partida</p><h1 className="mt-5 max-w-2xl text-5xl font-semibold leading-tight tracking-[-0.06em] sm:text-7xl">Ya tenemos una dirección.</h1><p className="mt-5 max-w-xl text-lg leading-8 text-[#68736b]">Hemos reunido lo importante para preparar una propuesta que encaje contigo.</p><div className="mt-10 grid gap-3 sm:grid-cols-2">{summary.map(([label, value]) => <div key={label} className="rounded-2xl border border-[#d3dbcf] bg-[#f8f7f1] p-5 shadow-[0_10px_24px_rgba(50,65,49,0.04)]"><p className="text-sm text-[#819078]">{label}</p><p className="mt-2 font-semibold">{Array.isArray(value) ? value.join(", ") : value || "Pendiente"}</p></div>)}</div><div className="mt-6 rounded-2xl bg-[#18231f] p-6 text-[#f6f4ed] shadow-[0_20px_40px_rgba(24,35,31,0.16)]"><p className="text-sm text-[#b9c2b7]">Siguiente paso</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Desbloquea tu planificación completa.</h2><p className="mt-3 max-w-lg leading-7 text-[#c8d0c5]">La rutina, la dieta y el seguimiento estarán disponibles al crear tu cuenta gratuita.</p><Link href="/register" className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#d7f36b] px-5 py-3 text-sm font-semibold text-[#18231f]">Crear mi cuenta gratuita <ArrowRight size={16} /></Link></div></section>
@@ -210,21 +220,22 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
+    <main className="app-canvas min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-3xl flex-col">
         <header className="flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3" aria-label="Volver a Atempo Fit"><span className="grid size-10 place-items-center rounded-xl bg-[#18231f] text-[#d7f36b]"><Sparkles size={18} /></span><span className="font-semibold">Atempo Fit</span></Link>
-          <span className="text-sm text-[#68736b]">Paso {currentIndex + 1} de {questions.length}</span>
+          <span className="text-sm text-[#68736b]">Paso {currentIndex + 1} de {visibleQuestions.length}</span>
         </header>
         <div className="mt-8 h-1.5 overflow-hidden rounded-full bg-[#dfe4d8]"><div className="h-full rounded-full bg-[#72873f] transition-all duration-300" style={{ width: `${progress}%` }} /></div>
         <section className="flex flex-1 flex-col justify-center py-12">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#819078]">{progress}% completado</p>
           <h1 className="mt-5 max-w-2xl text-4xl font-semibold leading-tight tracking-[-0.06em] sm:text-6xl">{question.title}</h1>
           <p className="mt-5 max-w-xl text-lg leading-8 text-[#68736b]">{question.description}</p>
-          {question.type === "text" ? <textarea value={typeof currentAnswer === "string" ? currentAnswer : ""} onChange={(event) => selectAnswer(event.target.value)} placeholder={question.placeholder} className="mt-10 min-h-36 w-full max-w-xl resize-none rounded-2xl border border-[#cfd7c8] bg-[#f8f7f1] p-5 text-lg outline-none transition focus:border-[#72873f]" /> : question.type === "number" ? <div className="mt-10 flex max-w-sm items-center gap-3 border-b-2 border-[#aeb9a2] pb-3"><input autoFocus type="number" value={typeof currentAnswer === "number" ? currentAnswer : ""} onChange={(event) => selectAnswer(event.target.value ? Number(event.target.value) : "")} className="w-full bg-transparent text-4xl font-semibold outline-none" placeholder="0" /><span className="text-[#68736b]">{question.unit}</span></div> : <div className="mt-10 grid max-w-2xl gap-3 sm:grid-cols-2">{question.options?.map((option) => { const selected = Array.isArray(currentAnswer) ? currentAnswer.includes(option) : currentAnswer === option; const optionDescription = optionDescriptions[question.key]?.[option]; return <button type="button" key={option} onClick={() => selectAnswer(option)} className={`flex min-h-16 items-center justify-between gap-4 rounded-2xl border px-5 py-4 text-left transition ${selected ? "border-[#72873f] bg-[#e7f5b4]" : "border-[#d3dbcf] bg-[#f8f7f1] hover:border-[#9aaa89]"}`}><span><span className="block font-medium">{option}</span>{optionDescription ? <span className="mt-1 block text-sm leading-5 text-[#68736b]">{optionDescription}</span> : null}</span>{selected && <Check size={19} className="shrink-0 text-[#60703d]" />}</button>; })}</div>}
+          {question.type === "text" ? <textarea value={typeof currentAnswer === "string" ? currentAnswer : ""} onChange={(event) => selectAnswer(event.target.value)} placeholder={question.placeholder} className="mt-10 min-h-36 w-full max-w-xl resize-none rounded-2xl border border-[#cfd7c8] bg-[#f8f7f1] p-5 text-lg outline-none transition focus:border-[#72873f]" /> : question.type === "number" ? <div className="mt-10 flex max-w-sm items-center gap-3 border-b-2 border-[#aeb9a2] pb-3"><input autoFocus type="number" value={typeof currentAnswer === "number" ? currentAnswer : ""} onChange={(event) => selectAnswer(event.target.value ? Number(event.target.value) : "")} className="w-full bg-transparent text-4xl font-semibold outline-none" placeholder="0" /><span className="text-[#68736b]">{question.unit}</span></div> : question.key === "training_equipment" ? <EquipmentSelector selected={Array.isArray(currentAnswer) ? currentAnswer : []} onSelect={selectAnswer} /> : <div className="mt-10 grid max-w-2xl gap-3 sm:grid-cols-2">{question.options?.map((option) => { const selected = Array.isArray(currentAnswer) ? currentAnswer.includes(option) : currentAnswer === option; const optionDescription = optionDescriptions[question.key]?.[option]; return <button type="button" key={option} onClick={() => selectAnswer(option)} className={`flex min-h-16 items-center justify-between gap-4 rounded-2xl border px-5 py-4 text-left transition ${selected ? "border-[#72873f] bg-[#e7f5b4]" : "border-[#d3dbcf] bg-[#f8f7f1] hover:border-[#9aaa89]"}`}><span><span className="block font-medium">{option}</span>{optionDescription ? <span className="mt-1 block text-sm leading-5 text-[#68736b]">{optionDescription}</span> : null}</span>{selected && <Check size={19} className="shrink-0 text-[#60703d]" />}</button>; })}</div>}
           {error && <p className="mt-6 text-sm font-medium text-[#a64e3c]">{error}</p>}
+          {error && profileConverted && <Link href="/checkin?mode=workout" className="mt-4 font-semibold underline">Revisar el material de entrenamiento</Link>}
         </section>
-        <footer className="flex items-center justify-between border-t border-[#d9ddd3] pt-5"><button type="button" disabled={currentIndex === 0 || isSaving} onClick={() => setCurrentIndex((index) => Math.max(index - 1, 0))} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold text-[#68736b] disabled:opacity-40"><ArrowLeft size={17} /> Anterior</button><button type="button" disabled={isSaving || !sessionToken} onClick={goNext} className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-6 py-3 text-sm font-semibold text-[#f6f4ed] disabled:cursor-not-allowed disabled:opacity-40">{isSaving ? <LoaderCircle size={17} className="animate-spin" /> : <>Siguiente <ArrowRight size={17} /></>}</button></footer>
+        <footer className="flex items-center justify-between border-t border-[#d9ddd3] pt-5"><NavigationButton type="button" disabled={currentIndex === 0 || isSaving || profileConverted} onClick={() => setCurrentIndex((index) => Math.max(index - 1, 0))} kind="back">Anterior</NavigationButton><button type="button" disabled={isSaving || !sessionToken || profileConverted} onClick={goNext} className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-6 py-3 text-sm font-semibold text-[#f6f4ed] disabled:cursor-not-allowed disabled:opacity-40">{isSaving ? <LoaderCircle size={17} className="animate-spin" /> : <>Siguiente <ArrowRight size={17} /></>}</button></footer>
       </div>
     </main>
   );

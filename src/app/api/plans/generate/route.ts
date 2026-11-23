@@ -3,10 +3,11 @@ import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generateInitialPlan, parsePlanningProfile } from "@/features/planning/engine";
+import { generateInitialPlan, parsePlanningProfile, PlanningAvailabilityError } from "@/features/planning/engine";
+import { adaptationGate, adaptationTokenSchema, readOptionalJson } from "@/features/planning/adaptation-gate";
 import { getPlanningExerciseCatalog } from "@/lib/exercise-catalog";
 
-const generateSchema = z.object({ mealCount: z.number().int().min(3).max(6).optional() }).default({});
+const generateSchema = z.object({ mealCount: z.number().int().min(3).max(6).optional(), adaptationToken: adaptationTokenSchema });
 
 export async function POST(request: Request) {
   const authClient = await createClient();
@@ -22,7 +23,9 @@ export async function POST(request: Request) {
   let nutritionPlanId: string | null = null;
 
   try {
-    const body = generateSchema.parse(await request.json().catch(() => ({})));
+    const parsed = generateSchema.safeParse(await readOptionalJson(request));
+    if (!parsed.success) return NextResponse.json({ error: "Revisa los datos de generación del plan." }, { status: 400 });
+    const body = parsed.data;
     supabase = createAdminClient();
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -41,6 +44,9 @@ export async function POST(request: Request) {
       .eq("active", true)
       .maybeSingle();
 
+    let existingNutritionId: string | null = null;
+    let existingWorkoutVersionId: string | null = null;
+    let existingNutritionVersionId: string | null = null;
     if (existingPlan) {
       const { data: existingVersion } = await supabase
         .from("workout_plan_versions")
@@ -48,12 +54,14 @@ export async function POST(request: Request) {
         .eq("workout_plan_id", existingPlan.id)
         .eq("active", true)
         .maybeSingle();
+      existingWorkoutVersionId = existingVersion?.id ?? null;
       const { data: existingNutrition } = await supabase
         .from("nutrition_plans")
         .select("id")
         .eq("user_id", authData.user.id)
         .eq("active", true)
         .maybeSingle();
+      existingNutritionId = existingNutrition?.id ?? null;
 
       let workoutIsComplete = false;
       if (existingVersion) {
@@ -67,6 +75,7 @@ export async function POST(request: Request) {
       let nutritionIsComplete = false;
       if (existingNutrition) {
         const { data: nutritionVersion } = await supabase.from("nutrition_plan_versions").select("id").eq("nutrition_plan_id", existingNutrition.id).eq("active", true).maybeSingle();
+        existingNutritionVersionId = nutritionVersion?.id ?? null;
         if (nutritionVersion) {
           const { count } = await supabase.from("nutrition_meals").select("id", { count: "exact", head: true }).eq("nutrition_plan_version_id", nutritionVersion.id);
           nutritionIsComplete = (count ?? 0) > 0;
@@ -77,16 +86,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ generated: false, reason: "active_plan_exists" });
       }
 
-      const { error: workoutDeleteError } = await supabase.from("workout_plans").delete().eq("id", existingPlan.id);
-      if (workoutDeleteError) throw workoutDeleteError;
-      if (existingNutrition) {
-        const { error: nutritionDeleteError } = await supabase.from("nutrition_plans").delete().eq("id", existingNutrition.id);
-        if (nutritionDeleteError) throw nutritionDeleteError;
-      }
     }
 
     const profileWithMealCount = { ...profile, meal_count: body.mealCount ?? profile.meal_count ?? 4 };
-    const generatedPlan = generateInitialPlan(parsePlanningProfile(profileWithMealCount), await getPlanningExerciseCatalog());
+    const generatedPlan = generateInitialPlan(parsePlanningProfile(profileWithMealCount), await getPlanningExerciseCatalog(), { allowAdaptation: true });
+    const gate = adaptationGate(generatedPlan, body.adaptationToken, { scope: "initial", userId: authData.user.id, profileWithMealCount, existingPlan: existingPlan?.id, existingWorkoutVersionId, existingNutritionId, existingNutritionVersionId });
+    if (gate) return gate;
+    if (existingPlan) {
+      const { error: workoutDeleteError } = await supabase.from("workout_plans").delete().eq("id", existingPlan.id);
+      if (workoutDeleteError) throw workoutDeleteError;
+      if (existingNutritionId) {
+        const { error: nutritionDeleteError } = await supabase.from("nutrition_plans").delete().eq("id", existingNutritionId);
+        if (nutritionDeleteError) throw nutritionDeleteError;
+      }
+    }
     const { data: run, error: runError } = await supabase
       .from("plan_generation_runs")
       .insert({
@@ -118,7 +131,7 @@ export async function POST(request: Request) {
 
     const { data: workoutVersion, error: workoutVersionError } = await supabase
       .from("workout_plan_versions")
-      .insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: 1, profile_snapshot: profile, reason: "onboarding" })
+      .insert({ workout_plan_id: workoutPlan.id, generation_run_id: run.id, version_number: 1, profile_snapshot: { ...profile, workout_adaptations: generatedPlan.workoutAdaptations }, reason: "onboarding" })
       .select("id")
       .single();
     if (workoutVersionError || !workoutVersion) throw workoutVersionError ?? new Error("Unable to create workout version.");
@@ -202,7 +215,7 @@ export async function POST(request: Request) {
     }
 
     await supabase.from("plan_generation_runs").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", run.id);
-    return NextResponse.json({ generated: true, structure: generatedPlan.structure });
+    return NextResponse.json({ generated: true, structure: generatedPlan.structure, adaptations: generatedPlan.workoutAdaptations });
   } catch (error) {
     if (supabase) {
       if (nutritionPlanId) await supabase.from("nutrition_plans").delete().eq("id", nutritionPlanId);
@@ -210,6 +223,7 @@ export async function POST(request: Request) {
       if (generationRunId) await supabase.from("plan_generation_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: error instanceof Error ? error.message : "Unknown generation error" }).eq("id", generationRunId);
     }
     console.error("Unable to generate initial plan", error instanceof Error ? error.message : "Unknown error");
+    if (error instanceof PlanningAvailabilityError) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ error: "Unable to generate initial plan." }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
-// The 45 originally curated exercises with locally-hosted, visually verified start/end photos.
-// Shared so the planning engine can treat them as trusted media too, not only the display layer.
+import { getExerciseIllustration } from "@/lib/illustration-media";
+
+// The original curated photos remain available to the planning catalog, but are not displayed.
 export const localExerciseMedia: Record<string, [string, string]> = {
   "Sentadilla goblet": ["/exercises/goblet-squat-start.jpg", "/exercises/goblet-squat-end.jpg"],
   "Prensa de piernas": ["/exercises/leg-press-start.jpg", "/exercises/leg-press-end.jpg"],
@@ -49,3 +50,9 @@ export const localExerciseMedia: Record<string, [string, string]> = {
 };
 
 export const localExerciseNames = new Set(Object.keys(localExerciseMedia));
+
+export function getExerciseMedia(name: string): [string, string] | null {
+  const illustration = getExerciseIllustration(name);
+  if (illustration) return [illustration.start, illustration.end ?? illustration.start];
+  return null;
+}

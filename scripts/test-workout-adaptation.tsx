@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { adaptationProposalFromResponse, adaptationsFromSnapshot, WorkoutAdaptationNotice } from "../src/components/workout-adaptation-notice";
+
+const adaptations = [{ dayIndex: 1, dayName: "Full Body A", plannedExercises: 6, actualExercises: 5, unfilled: ["gemelos"] }];
+assert.deepEqual(adaptationsFromSnapshot({ workout_adaptations: adaptations }), adaptations);
+assert.deepEqual(adaptationsFromSnapshot({}), []);
+assert.deepEqual(adaptationsFromSnapshot(null), []);
+const notice = renderToStaticMarkup(<WorkoutAdaptationNotice adaptations={adaptations} />);
+assert.match(notice, /5 de 6 ejercicios/);
+assert.match(notice, /gemelos/);
+assert.match(notice, /no son equivalentes/);
+const coverage = [{ kind: "coverage" as const, missingGroups: ["bíceps", "gemelos"] }];
+const proposedDays = [{ name: "Torso", exercises: [{ name: "Press banca", sets: 2, repetitions: "8-10", restSeconds: 90 }] }];
+const details = { structure: "Rutina propuesta", days: proposedDays };
+assert.deepEqual(adaptationsFromSnapshot({ workout_adaptations: coverage }), coverage);
+const coverageNotice = renderToStaticMarkup(<WorkoutAdaptationNotice adaptations={coverage} />);
+assert.match(coverageNotice, /Sin ejercicio principal programado para/);
+assert.match(coverageNotice, /bíceps, gemelos/);
+assert.doesNotMatch(coverageNotice, /plazas previstas/);
+assert.deepEqual(adaptationProposalFromResponse({ action: "adaptation_required", adaptations: coverage, adaptationToken: "a".repeat(64), ...details })?.adaptations, coverage);
+assert.match(renderToStaticMarkup(<WorkoutAdaptationNotice adaptations={coverage} proposal={details} />), /Press banca · 2 series · 8-10 · 90 s descanso/);
+assert.throws(() => adaptationProposalFromResponse({ action: "adaptation_required", adaptations: coverage, adaptationToken: "a".repeat(64) }));
+assert.equal(renderToStaticMarkup(<WorkoutAdaptationNotice adaptations={[]} />), "");
+const review = [{ kind: "review" as const, reasons: ["Consulta a un profesional antes de realizar esta rutina."] }];
+assert.deepEqual(adaptationsFromSnapshot({ workout_adaptations: review }), review);
+assert.deepEqual(adaptationProposalFromResponse({ action: "adaptation_required", adaptations: review, adaptationToken: "a".repeat(64), ...details })?.adaptations, review);
+assert.match(renderToStaticMarkup(<WorkoutAdaptationNotice adaptations={review} />), /Consulta a un profesional/);
+console.log("Aviso de adaptación y recuperación de la versión: pruebas correctas.");

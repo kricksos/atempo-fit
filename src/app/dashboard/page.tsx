@@ -1,40 +1,48 @@
-import { ArrowRight, Check, Dumbbell } from "lucide-react";
 import Link from "next/link";
 
 import { AppHeader } from "@/components/app-header";
 import { AssistantChat } from "@/components/assistant-chat";
-import { CardioPanel } from "@/components/cardio-panel";
 import { DashboardTabs } from "@/components/dashboard-tabs";
 import { GeneratePlanButton } from "@/components/generate-plan-button";
 import { NutritionPlan } from "@/components/nutrition-plan";
-import { NextStepPanel } from "@/components/next-step-panel";
+import { NextStepPanel, PlanReviewNotice } from "@/components/next-step-panel";
 import { NutritionSummaryCard } from "@/components/nutrition-summary-card";
 import { ProgressCheckinForm, type ProgressCheckinSummary, type ProgressMeasurementSummary } from "@/components/progress-checkin-form";
 import { ProgressPanel } from "@/components/progress-panel";
+import { ProgressReviewBanner } from "@/components/progress-review-banner";
 import { ProgressSummaryCard } from "@/components/progress-summary-card";
+import { ProgressWorkspace } from "@/components/progress-workspace";
 import { TrainingDaysPanel } from "@/components/training-days-panel";
+import { estimateStrengthSeconds } from "@/features/planning/workout-planner";
+import { nutritionProgress } from "@/features/planning/nutrition-compliance";
 import { WorkoutHistoryPanel } from "@/components/workout-history-panel";
+import { WeeklyActivityCard } from "@/components/weekly-activity-card";
 import {
   computeGamification,
   computeStreaks,
 } from "@/features/gamification/xp";
 import { unifiedActivityDates, weeklyActivity } from "@/features/gamification/activity";
 import {
-  cardioByWorkoutDay,
   cardioRecommendations,
+  resolveCardioByWorkoutDay,
 } from "@/features/planning/cardio";
 import { foodAllowedForPlan } from "@/lib/food-restrictions";
 import { foodRestrictionLabelsFromRestrictions } from "@/lib/food-restrictions";
 import { injuryLabelsFromRestrictions } from "@/lib/injuries";
+import { muscleGroupLabels, normalizeSummaryMuscle } from "@/lib/exercise-muscles";
+import { getExerciseDisplayName } from "@/lib/illustration-media";
+import { loadMeasurements } from "@/lib/progress-measurements-server";
 import { trackAnalyticsEvent } from "@/lib/analytics";
+import { hasStrengthPerformance } from "@/lib/workout-log";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type Day = {
   id: string;
   name: string;
-  exerciseCount: number;
+  exerciseCount: number | null;
   muscleSummary: string;
+  estimatedMinutes?: number;
   cardio?: { key: string; title: string; modalities: string[]; modality: string; durationMinutes: number; intensity: "Suave" | "Moderada" | "Intervalos"; effort: string };
 };
 type Meal = {
@@ -62,6 +70,7 @@ type Item = {
 };
 
 export const dynamic = "force-dynamic";
+const showWorkoutProgressAnalysis = false;
 
 function nameFor(value: string) {
   return value.startsWith("Full Body")
@@ -73,6 +82,7 @@ function nameFor(value: string) {
         : value;
 }
 function variantFor(value: string) {
+  if (/^(Cuerpo completo|Tren superior|Tren inferior|Fuerza adaptada) \d+$/.test(value)) return "Fuerza";
   const match = value.match(/[A-Z]$/);
   return match ? `Variante ${match[0]}` : value;
 }
@@ -98,16 +108,16 @@ export default async function DashboardPage() {
   const db = createAdminClient();
   const now = new Date();
   const [
-    { data: profile },
+    { data: profile, error: profileError },
     { data: activePlan },
     { data: nutrition },
-    { data: measurements },
-    { data: latestCheckin },
+    measurements,
+    { data: checkinRows, error: checkinsError },
   ] = await Promise.all([
     db
       .from("profiles")
       .select(
-        "primary_goal, experience, current_weight_kg, target_weight_kg, created_at, food_restrictions, restrictions, diet_preference, meals_out_slots, nutrition_plan_review_needed, workout_plan_review_needed",
+        "primary_goal, experience, training_place, current_weight_kg, target_weight_kg, created_at, food_restrictions, restrictions, diet_preference, meals_out_slots, nutrition_plan_review_needed, workout_plan_review_needed",
       )
       .eq("user_id", auth.user.id)
       .maybeSingle(),
@@ -123,35 +133,28 @@ export default async function DashboardPage() {
       .eq("user_id", auth.user.id)
       .eq("active", true)
       .maybeSingle(),
-    db
-      .from("body_measurements")
-      .select(
-        "id, measured_at, weight_kg, waist_cm, chest_cm, arm_cm, thigh_cm",
-      )
-      .eq("user_id", auth.user.id)
-      .order("measured_at", { ascending: true }),
+    loadMeasurements(db, auth.user.id),
     db
       .from("progress_checkins")
       .select("checked_in_at, energy_score, sleep_score, stress_score, soreness_score, training_adherence, nutrition_adherence, pain_present, pain_area, pain_severity, notes")
       .eq("user_id", auth.user.id)
       .order("checked_in_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(30),
   ]);
+  if (profileError) throw profileError;
+  if (checkinsError) throw checkinsError;
+  const checkins = (checkinRows ?? []) as ProgressCheckinSummary[];
+  const latestCheckin = checkins[0] ?? null;
   const cardioPlan = cardioRecommendations(
     typeof profile?.primary_goal === "string" ? profile.primary_goal : "",
     typeof profile?.experience === "string" ? profile.experience : "",
+    profile?.training_place ?? null,
   );
-  const { data: cardioPreferences } = await db
+  const { data: cardioPreferences, error: cardioPreferencesError } = await db
     .from("cardio_preferences")
     .select("session_key, workout_day_id, modality, duration_minutes, intensity, enabled")
     .eq("user_id", auth.user.id);
-  const cardioPreferenceByKey = new Map(
-    (cardioPreferences ?? []).map((preference) => [
-      preference.session_key,
-      preference,
-    ]),
-  );
+  if (cardioPreferencesError) throw cardioPreferencesError;
   const plan =
     activePlan ??
     (
@@ -159,6 +162,7 @@ export default async function DashboardPage() {
         .from("workout_plans")
         .select("id, name")
         .eq("user_id", auth.user.id)
+        .is("hidden_at", null)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -195,48 +199,32 @@ export default async function DashboardPage() {
         .select("id, name")
         .eq("workout_plan_version_id", version.id)
         .order("order_number");
-      const cardioSchedule = cardioByWorkoutDay(
+      const cardioSchedule = resolveCardioByWorkoutDay(
         cardioPlan,
-        savedDays?.length ?? 0,
+        (savedDays ?? []).map((day) => day.id),
+        cardioPreferences ?? [],
       );
       const ids = savedDays?.map((day) => day.id) ?? [];
-      const { data: exerciseRows } = await db
+      const { data: exerciseRows, error: exerciseRowsError } = await db
         .from("workout_exercises")
-        .select("workout_day_id")
+        .select("workout_day_id, sets, rest_seconds, exercises(primary_muscle)")
         .in("workout_day_id", ids);
+      if (exerciseRowsError) console.error("No se pudieron cargar los ejercicios de la rutina", exerciseRowsError);
       days = (savedDays ?? []).map((day, index) => {
-        const cardio = cardioSchedule[index];
-        const dayPreference = (cardioPreferences ?? []).find((item) => item.workout_day_id === day.id);
-        const keyPreference = cardio ? cardioPreferenceByKey.get(cardio.key) : null;
-        const preference = dayPreference ?? (keyPreference?.workout_day_id === day.id ? keyPreference : null);
-        const cardioDisabled = preference?.enabled === false;
-        const activePreference = preference?.enabled !== false ? preference : null;
-        const configuredCardio = cardio && !cardioDisabled
-          ? {
-              ...cardio,
-              modalities: activePreference?.modality
-                ? [activePreference.modality, ...cardio.modalities.filter((modality) => modality !== activePreference.modality)]
-                : cardio.modalities,
-              durationMinutes: activePreference?.duration_minutes ?? cardio.durationMinutes,
-              intensity: ((activePreference?.intensity as typeof cardio.intensity | undefined) ?? cardio.intensity) as "Suave" | "Moderada" | "Intervalos",
-            }
-          : !cardio && activePreference
-            ? {
-                key: activePreference.session_key,
-                title: "Cardio adicional",
-                modalities: [activePreference.modality],
-                durationMinutes: activePreference.duration_minutes,
-                intensity: activePreference.intensity as "Suave" | "Moderada" | "Intervalos",
-                effort: "Configuración añadida a este día de entrenamiento.",
-              }
-            : null;
+        const configuredCardio = cardioSchedule[index];
+        const dayExercises = (exerciseRows ?? []).filter((row) => row.workout_day_id === day.id);
+        const muscles = muscleGroupLabels([...new Set(dayExercises.flatMap((row) =>
+          row.exercises?.primary_muscle ? [normalizeSummaryMuscle(row.exercises.primary_muscle)] : []))]);
+        const missingMuscle = dayExercises.some((row) => !row.exercises?.primary_muscle);
+        const muscleSummary = exerciseRowsError ? "No se pudieron cargar los músculos" : muscles.length
+          ? [...muscles, ...(missingMuscle ? ["Algún músculo sin clasificar"] : [])].join(" · ")
+          : dayExercises.length ? "Músculos sin clasificar" : "Sin ejercicios";
         return {
           id: day.id,
           name: day.name,
-          exerciseCount: (exerciseRows ?? []).filter(
-            (row) => row.workout_day_id === day.id,
-          ).length,
-          muscleSummary: `Fuerza${configuredCardio ? ` · Cardio: ${configuredCardio.modalities[0]} ${configuredCardio.durationMinutes} min (${configuredCardio.intensity.toLowerCase()})` : ""}`,
+          exerciseCount: exerciseRowsError ? null : dayExercises.length,
+          estimatedMinutes: dayExercises.length ? Math.ceil(estimateStrengthSeconds(dayExercises.map((row) => ({ sets: row.sets, restSeconds: row.rest_seconds }))) / 60) : undefined,
+          muscleSummary,
           cardio: configuredCardio
             ? {
                 key: configuredCardio.key,
@@ -348,18 +336,7 @@ export default async function DashboardPage() {
         .select("meal_id, completed_on")
         .eq("user_id", auth.user.id);
       const today = new Date().toISOString().slice(0, 10);
-      todayMealIds = (completions ?? [])
-        .filter((item) => item.completed_on === today)
-        .map((item) => item.meal_id);
-      const countByDate = new Map<string, number>();
-      for (const item of completions ?? [])
-        countByDate.set(
-          item.completed_on,
-          (countByDate.get(item.completed_on) ?? 0) + 1,
-        );
-      completedDates = [...countByDate.entries()]
-        .filter(([, count]) => count >= meals.length)
-        .map(([date]) => date);
+      ({ todayMealIds, completedDates } = nutritionProgress(completions ?? [], mealIds, today));
     }
   }
   const scheduled = days.length ? days[completedCount % days.length] : null;
@@ -430,21 +407,22 @@ export default async function DashboardPage() {
       ),
     ]),
   ) as Record<string, string[]>;
-  const { data: loggedSessions } = await db
+  const { data: loggedSessions } = showWorkoutProgressAnalysis ? await db
     .from("workout_sessions")
     .select("id, completed_at")
     .eq("user_id", auth.user.id)
     .eq("completed", true)
     .order("completed_at", { ascending: true })
-    .limit(200);
+    .limit(200) : { data: [] };
   const loggedSessionIds = (loggedSessions ?? []).map((session) => session.id);
   const { data: allLogs } = loggedSessionIds.length
     ? await db
         .from("exercise_logs")
-        .select("workout_session_id, exercise_id, weight_kg, repetitions")
+        .select("workout_session_id, exercise_id, weight_kg, repetitions, duration_seconds")
         .in("workout_session_id", loggedSessionIds)
         .eq("completed", true)
     : { data: [] };
+  const strengthLogs = (allLogs ?? []).filter(hasStrengthPerformance);
   const sessionDateById = new Map(
     (loggedSessions ?? []).map((session) => [
       session.id,
@@ -452,7 +430,7 @@ export default async function DashboardPage() {
     ]),
   );
   const exerciseIdsWithLogs = [
-    ...new Set((allLogs ?? []).map((log) => log.exercise_id)),
+    ...new Set(strengthLogs.map((log) => log.exercise_id)),
   ];
   const { data: exerciseNames } = exerciseIdsWithLogs.length
     ? await db
@@ -464,7 +442,7 @@ export default async function DashboardPage() {
     (exerciseNames ?? []).map((exercise) => [
       exercise.id,
       {
-        name: exercise.name,
+        name: getExerciseDisplayName(exercise.name),
         muscleGroups: Array.isArray(exercise.muscle_groups)
           ? exercise.muscle_groups.filter(
               (group): group is string => typeof group === "string",
@@ -477,7 +455,7 @@ export default async function DashboardPage() {
     string,
     Map<string, { weightKg: number | null; reps: number | null; date: string }>
   >();
-  for (const log of allLogs ?? []) {
+  for (const log of strengthLogs) {
     const sessionsForExercise =
       bestSetBySession.get(log.exercise_id) ??
       new Map<
@@ -609,62 +587,47 @@ export default async function DashboardPage() {
         : planReviewIsStale
           ? `Han pasado ${daysSinceLastMeasurement} días desde tu último registro. Actualiza tu evolución para seguir ajustando el plan con datos recientes.`
           : undefined;
-  const overview = (
-    <>
-      <div className="grid gap-4 md:grid-cols-3">
-        <section className="rounded-3xl bg-[#18231f] p-6 text-white">
-          <Dumbbell className="text-[#d7f36b]" />
-          <p className="mt-10 text-sm text-[#b9c2b7]">
-            {completedToday ? "Completado hoy" : "Entrenamiento de hoy"}
-          </p>
-          {scheduled ? (
-            <>
-              <span className="mt-3 inline-flex rounded-full bg-[#d7f36b] px-3 py-1 text-xs font-bold text-[#18231f]">
-                {completedToday ? "Próximo" : "Toca ahora"} · Día{" "}
-                {scheduledIndex + 1} de {days.length}
-              </span>
-              <h2 className="mt-3 text-2xl font-semibold">
-                {nameFor(scheduled.name)}
-              </h2>
-              <p className="mt-2 text-sm text-[#c8d0c5]">
-                {variantFor(scheduled.name)} · {scheduled.muscleSummary}
-              </p>
-              {completedToday ? (
-                <span className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-[#b9c2b7]">
-                  <Check size={14} /> Disponible mañana
-                </span>
-              ) : (
-                <Link
-                  href={`/workout/${scheduled.id}`}
-                  className="mt-6 inline-flex rounded-full bg-[#d7f36b] px-4 py-2 text-sm font-semibold text-[#18231f]"
-                >
-                  Comenzar sesión
-                </Link>
-              )}
-            </>
-          ) : (
-            <h2 className="mt-2 text-2xl font-semibold">Aún por generar</h2>
-          )}
-        </section>
-        {nutritionVersion ? <NutritionSummaryCard calories={nutritionVersion.calories} proteinGrams={nutritionVersion.protein_grams} carbsGrams={nutritionVersion.carbs_grams} fatsGrams={nutritionVersion.fats_grams} mealIds={meals.map((meal) => meal.id)} todayCompletedMealIds={todayMealIds} completedDates={completedDates} /> : <section className="rounded-3xl border border-[#d3dbcf] bg-[#f8f7f1] p-6"><p className="text-sm text-[#819078]">Nutrición diaria</p><h2 className="mt-2 text-2xl font-semibold">Pendiente</h2></section>}
-        <ProgressSummaryCard currentWeightKg={latestMeasurement?.weightKg ?? null} startingWeightKg={firstMeasurement?.weightKg ?? null} targetWeightKg={displayedTargetWeightKg} weightDeltaKg={sortedMeasurements.length > 1 ? weightDelta : null} daysSinceLastMeasurement={daysSinceLastMeasurement} primaryGoal={displayedPrimaryGoal} />
-      </div>
-    </>
-  );
+  const planReviewHref = planReviewIsStale ? "/dashboard?tab=progress" : profile?.nutrition_plan_review_needed && !profile?.workout_plan_review_needed ? "/checkin?mode=nutrition" : profile?.workout_plan_review_needed && !profile?.nutrition_plan_review_needed ? "/checkin?mode=workout" : "/checkin";
+  const planReviewAction = planReviewIsStale ? "Actualizar evolución" : "Revisar mi plan";
+  const nextStepProps = {
+    completedToday,
+    workoutLabel: scheduled ? nameFor(scheduled.name) : null,
+    workoutHref: scheduled ? `/workout/${scheduled.id}` : null,
+    workoutDetails: scheduled ? { day: scheduledIndex + 1, days: days.length, variant: variantFor(scheduled.name), muscles: scheduled.muscleSummary, exerciseCount: scheduled.exerciseCount, estimatedMinutes: scheduled.estimatedMinutes } : null,
+    hasProfile: Boolean(profile),
+  };
+  const nextStep = <NextStepPanel {...nextStepProps} />;
+  const overview = <>
+    <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+      {nextStep}
+      <WeeklyActivityCard {...weeklyProgress.current} currentStreak={currentStreak} />
+    </div>
+    <div className="mt-4 grid gap-4 md:grid-cols-2">
+      {nutritionVersion ? <NutritionSummaryCard calories={nutritionVersion.calories} proteinGrams={nutritionVersion.protein_grams} carbsGrams={nutritionVersion.carbs_grams} fatsGrams={nutritionVersion.fats_grams} mealIds={meals.map((meal) => meal.id)} todayCompletedMealIds={todayMealIds} completedDates={completedDates} /> : <section className="rounded-[1.75rem] border border-[#d8e6e3] bg-white p-6 sm:p-7"><p className="text-sm text-[#526e69]">Nutrición diaria</p><h2 className="mt-2 text-2xl font-semibold">Pendiente</h2></section>}
+      <ProgressSummaryCard currentWeightKg={latestMeasurement?.weightKg ?? null} startingWeightKg={firstMeasurement?.weightKg ?? null} targetWeightKg={displayedTargetWeightKg} weightDeltaKg={sortedMeasurements.length > 1 ? weightDelta : null} daysSinceLastMeasurement={daysSinceLastMeasurement} primaryGoal={displayedPrimaryGoal} />
+    </div>
+  </>;
   const training = (
-    <TrainingDaysPanel
-      days={days}
-      scheduledId={scheduled?.id ?? null}
-      scheduledIndex={scheduledIndex}
-      completedToday={completedToday}
-      nameFor={nameFor}
-      variantFor={variantFor}
-    />
+    <>
+      <TrainingDaysPanel
+        days={days}
+        scheduledId={scheduled?.id ?? null}
+        scheduledIndex={scheduledIndex}
+        completedToday={completedToday}
+        nameFor={nameFor}
+        variantFor={variantFor}
+        cardioPreferences={cardioPreferences ?? []}
+        additionalSuggestions={days.length ? cardioPlan.slice(days.length) : []}
+        defaultCardio={cardioPlan[0] ?? null}
+      />
+    </>
   );
   const nutritionView = nutritionVersion ? (
     <NutritionPlan
+      key={meals.map((meal) => meal.id).join(":")}
       foodIds={foodIds}
       mealCount={nutritionVersion.meal_count}
+      reference={{ calories: nutritionVersion.calories, proteinGrams: nutritionVersion.protein_grams, carbsGrams: nutritionVersion.carbs_grams, fatsGrams: nutritionVersion.fats_grams }}
       todayCompletedMealIds={todayMealIds}
       completedDates={completedDates}
       meals={meals}
@@ -682,85 +645,45 @@ export default async function DashboardPage() {
       <GeneratePlanButton />
     </div>
   );
-  const cardioView = (
-    <CardioPanel
-      recommendations={days.flatMap((day) => day.cardio ? [{ ...day.cardio, workoutDayId: day.id }] : [])}
-      availableDays={days.map((day) => ({ id: day.id, label: `${nameFor(day.name)} · Día ${days.findIndex((item) => item.id === day.id) + 1}` }))}
-      initialConfigurations={Object.fromEntries(
-        (cardioPreferences ?? []).filter((preference) => preference.enabled !== false && days.some((day) => day.id === preference.workout_day_id)).map((preference) => [
-          preference.session_key,
-          {
-            modality: preference.modality,
-            duration: preference.duration_minutes,
-            intensity: preference.intensity as
-              "Suave" | "Moderada" | "Intervalos",
-          },
-        ]),
-      )}
-    />
-  );
-  const progress = (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-[#cdd9bd] bg-gradient-to-r from-[#eef6da] via-[#f7f9ef] to-[#eef4e1] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7f42]">Revisión recomendada</p>
-            <h2 className="mt-1 text-xl font-semibold text-[#1d2a16]">¿Han cambiado tus objetivos o tu semana?</h2>
-            <p className="mt-1 text-sm text-[#4b5a46]">Revisa tus datos de entrenamiento, nutrición, disponibilidad y molestias. Con esa información podemos actualizar tu dieta y tu rutina.</p>
-          </div>
-          <a href="/checkin" className="inline-flex items-center gap-2 rounded-full bg-[#18231f] px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(24,35,31,0.24)] transition-transform hover:-translate-y-0.5 hover:bg-[#0f1714]">
-            Actualizar mi plan
-            <ArrowRight size={16} />
-          </a>
-        </div>
-      </section>
-      <ProgressCheckinForm latestCheckin={latestCheckin as ProgressCheckinSummary | null} initialTargetWeightKg={profile?.target_weight_kg ?? null} latestMeasurement={latestMeasurement as ProgressMeasurementSummary | null} previousMeasurement={firstMeasurement && latestMeasurement && firstMeasurement.id !== latestMeasurement.id ? sortedMeasurements[sortedMeasurements.length - 2] as ProgressMeasurementSummary : null} primaryGoal={displayedPrimaryGoal} activeInjuries={injuryLabelsFromRestrictions(profile?.restrictions).filter((value) => value !== "Ninguna")} activeFoodRestrictions={foodRestrictionLabelsFromRestrictions(profile?.food_restrictions).filter((value) => value !== "Ninguna")} />
-      <ProgressPanel
-        key={displayedTargetWeightKg ?? "no-target"}
-        entries={measurementEntries}
-        targetWeightKg={displayedTargetWeightKg}
-        primaryGoal={displayedPrimaryGoal}
-        daysSinceLastMeasurement={daysSinceLastMeasurement}
-      />
-    </div>
-  );
+  const progressFormProps = {
+    latestCheckin,
+    initialTargetWeightKg: profile?.target_weight_kg ?? null,
+    latestMeasurement: latestMeasurement as ProgressMeasurementSummary | null,
+    previousMeasurement: firstMeasurement && latestMeasurement && firstMeasurement.id !== latestMeasurement.id ? sortedMeasurements[sortedMeasurements.length - 2] as ProgressMeasurementSummary : null,
+    primaryGoal: displayedPrimaryGoal,
+    activeInjuries: injuryLabelsFromRestrictions(profile?.restrictions).filter((value) => value !== "Ninguna"),
+    activeFoodRestrictions: foodRestrictionLabelsFromRestrictions(profile?.food_restrictions).filter((value) => value !== "Ninguna"),
+  };
+  const progress = <ProgressWorkspace
+    entries={measurementEntries}
+    checkins={checkins}
+    measurementForm={<ProgressCheckinForm {...progressFormProps} mode="measurements" />}
+    wellnessForm={<ProgressCheckinForm {...progressFormProps} mode="wellness" />}
+    analysis={<><ProgressReviewBanner /><ProgressPanel key={displayedTargetWeightKg ?? "no-target"} entries={measurementEntries} targetWeightKg={displayedTargetWeightKg} primaryGoal={displayedPrimaryGoal} daysSinceLastMeasurement={daysSinceLastMeasurement} /></>}
+  />;
   return (
-    <main className="min-h-screen bg-[#f4f1e9] px-5 py-6 text-[#18231f] sm:px-8 sm:py-8">
-      <div className="mx-auto max-w-6xl">
+    <main className="min-h-screen bg-[#f4f6f8] px-5 py-6 text-[#172f3b] sm:px-8 sm:py-8">
+      <div className="mx-auto max-w-[1320px]">
         <AppHeader
+          variant="dashboard"
           email={auth.user.email ?? ""}
           name={accountName}
           gamification={{ ...gamification, currentStreak, bestStreak }}
           notices={notices}
         />
-        <section className="mt-14">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#819078]">
-            Tu espacio de progreso
-          </p>
-          <h1 className="mt-4 text-5xl font-semibold tracking-[-0.07em] sm:text-7xl">
-            Un paso cada vez.
-          </h1>
-          <p className="mt-5 max-w-xl text-lg leading-8 text-[#68736b]">
-            Tu planificación reúne entrenamiento, nutrición y seguimiento en un
-            solo lugar.
-          </p>
-          <NextStepPanel
-            completedToday={completedToday}
-            workoutLabel={scheduled ? nameFor(scheduled.name) : null}
-            workoutHref={scheduled ? `/workout/${scheduled.id}` : null}
-            hasProfile={Boolean(profile)}
-            planReviewPending={planReviewPending}
-            planReviewMessage={planReviewMessage}
-            planReviewHref={planReviewIsStale ? "/dashboard?tab=progress" : profile?.nutrition_plan_review_needed && !profile?.workout_plan_review_needed ? "/checkin?mode=nutrition" : profile?.workout_plan_review_needed && !profile?.nutrition_plan_review_needed ? "/checkin?mode=workout" : "/checkin?mode=general"}
-            planReviewAction={planReviewIsStale ? "Actualizar evolución" : "Revisar mi plan"}
-          />
+        <section className="mt-7">
+          <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#08786f]"><span className="size-2 rounded-full bg-[#08786f]" /> Tu espacio de progreso</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] sm:text-5xl">Tu ritmo. Tu progreso.</h1>
+            <p className="mt-2 text-sm leading-6 text-[#667d88]">Todo lo que necesitas para seguir avanzando, en un solo lugar.</p></div>
+            <span className="rounded-full border border-[#e0e7eb] bg-white px-4 py-2 text-xs font-semibold text-[#536e7a]">Tu semana, de un vistazo</span></div>
           <DashboardTabs
             overview={overview}
+            trainingStep={<NextStepPanel {...nextStepProps} compact />}
+            reviewNotice={planReviewPending ? <PlanReviewNotice message={planReviewMessage} href={planReviewHref} action={planReviewAction} /> : null}
             training={
               <>
                 {training}
-                {cardioView}
-                <WorkoutHistoryPanel exerciseProgress={exerciseProgress} />
+                {showWorkoutProgressAnalysis && <WorkoutHistoryPanel exerciseProgress={exerciseProgress} />}
               </>
             }
             nutrition={nutritionView}

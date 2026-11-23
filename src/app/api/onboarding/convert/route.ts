@@ -8,6 +8,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { restrictionsFromInjuryLabels } from "@/lib/injuries";
 import { foodRestrictionsFromLabels } from "@/lib/food-restrictions";
 import { priorityTagsFromLabels } from "@/lib/priorities";
+import { equipmentForOnboarding } from "@/lib/exercise-equipment";
+import { normalizeTrainingPlace } from "@/lib/training-place";
+import { continuityOptions, techniqueOptions, undisclosedTrainingAnswer } from "@/lib/training-experience";
 
 const convertSchema = z.object({
   sessionToken: z.string().min(32).optional(),
@@ -96,6 +99,19 @@ export async function POST(request: Request) {
     }
 
     const values = answerMap(answers);
+    const trainingContinuity = values.get("training_continuity");
+    const trainingTechnique = values.get("training_technique");
+    const continuity = z.enum([...continuityOptions, undisclosedTrainingAnswer]).optional().safeParse(trainingContinuity);
+    const technique = z.enum([...techniqueOptions, undisclosedTrainingAnswer]).optional().safeParse(trainingTechnique);
+    if (!continuity.success || !technique.success) return NextResponse.json({ error: "Revisa tu continuidad y experiencia técnica." }, { status: 400 });
+    const trainingPlace = normalizeTrainingPlace(values.get("training_place"));
+    if (!trainingPlace) return NextResponse.json({ error: "Indica dónde entrenas." }, { status: 400 });
+    let trainingEquipment;
+    try {
+      trainingEquipment = equipmentForOnboarding(trainingPlace, values.get("training_equipment"));
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "El material indicado no es válido." }, { status: 400 });
+    }
     const profile = {
       user_id: authData.user.id,
       name: textValue(authData.user.user_metadata?.name) || "Usuario Atempo Fit",
@@ -108,6 +124,8 @@ export async function POST(request: Request) {
       primary_goal: textValue(values.get("goal")),
       diet_preference: textValue(values.get("diet")) || "Omnívoro",
       experience: textValue(values.get("experience")),
+      training_continuity: continuity.data === undisclosedTrainingAnswer ? null : continuity.data ?? null,
+      training_technique: technique.data === undisclosedTrainingAnswer ? null : technique.data ?? null,
       daily_activity: textValue(values.get("daily_activity")),
       sleep_hours: sleepAverage(values.get("sleep")),
       sleep_quality: "not_provided",
@@ -115,7 +133,8 @@ export async function POST(request: Request) {
       days_per_week: firstNumber(values.get("days_per_week"), 3),
       session_duration_minutes: firstNumber(values.get("session_duration"), 60),
       meal_count: firstNumber(values.get("meal_count"), 4),
-      training_place: textValue(values.get("training_place")),
+      training_place: trainingPlace,
+      training_equipment: trainingEquipment,
       workout_planning_mode: textValue(values.get("workout_planning_mode")) === "Manual" ? "manual" : "auto",
       restrictions: restrictionsFromInjuryLabels(values.get("injuries")),
       food_restrictions: foodRestrictionsFromLabels(values.get("food_restrictions")),

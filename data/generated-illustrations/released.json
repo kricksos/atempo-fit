@@ -1,0 +1,10 @@
+{
+  "Aperturas posteriores con mancuernas": { "id": "chest-supported-rear-delt-fly", "scale": 1 },
+  "Elevación posterior tumbado con mancuernas": { "id": "low-incline-rear-delt-fly", "scale": 1 },
+  "Curl predicador en polea": { "id": "cable-preacher-curl", "scale": 1 },
+  "Extensión de tríceps por encima de la cabeza con barra": { "id": "overhead-bar-triceps", "scale": 1 },
+  "Hiperextensión inversa": { "id": "machine-reverse-hyperextension", "scale": 1 },
+  "Press de hombros en polea": { "id": "cable-shoulder-press", "scale": 1 },
+  "Remo elevado en polea": { "id": "raised-cable-row", "scale": 1 },
+  "Rotación externa de hombro en polea": { "id": "cable-external-rotation", "scale": 1 }
+}
